@@ -322,7 +322,11 @@
                     <input type="url" id="driveUrl" placeholder="https://drive.google.com/file/d/..." 
                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
                     <div class="text-xs text-gray-500 mb-4">
-                        💡 Asegúrate de que el enlace tenga permisos públicos de "Cualquier persona con el enlace"
+                        <strong>📋 Instrucciones:</strong><br>
+                        1. Haz clic derecho en tu imagen en Google Drive<br>
+                        2. Selecciona "Obtener enlace"<br>
+                        3. Cambia los permisos a "Cualquier persona con el enlace"<br>
+                        4. Copia y pega el enlace aquí
                     </div>
                     <div class="flex gap-3 justify-end">
                         <button id="cancelBtn" 
@@ -348,28 +352,61 @@
                 importBtn.onclick = () => {
                     const url = urlInput.value.trim();
                     if (url) {
-                        // Convertir enlace de Google Drive a enlace directo
+                        // Convertir enlace de Google Drive a enlace directo con múltiples formatos
                         const fileId = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
                         if (fileId) {
-                            const directUrl = `https://drive.google.com/uc?id=${fileId[1]}`;
+                            // Intentar diferentes formatos de URL de Google Drive
+                            const directUrls = [
+                                `https://drive.google.com/uc?export=view&id=${fileId[1]}`,
+                                `https://drive.google.com/uc?id=${fileId[1]}&export=download`,
+                                `https://lh3.googleusercontent.com/d/${fileId[1]}`,
+                                `https://drive.google.com/thumbnail?id=${fileId[1]}&sz=w1000`
+                            ];
+                            
                             const filename = url.match(/[^/]+(?=\?|$)/) ? 
                                 url.match(/[^/]+(?=\?|$)/)[0] : 
                                 `Imagen-Drive-${Date.now()}`;
                             
-                            const newImage = {
-                                id: Date.now() + Math.random(),
-                                src: directUrl,
-                                name: filename,
-                                size: 0,
-                                isFromDrive: true
+                            // Probar qué URL funciona
+                            let urlIndex = 0;
+                            const testUrl = () => {
+                                if (urlIndex >= directUrls.length) {
+                                    alert('No se pudo cargar la imagen desde Google Drive. Asegúrate de que:\n1. El enlace es público\n2. Los permisos están configurados como "Cualquier persona con el enlace puede ver"\n3. La imagen está disponible públicamente');
+                                    return;
+                                }
+                                
+                                const testImg = new Image();
+                                testImg.crossOrigin = 'anonymous';
+                                
+                                testImg.onload = () => {
+                                    // Esta URL funciona, usar esta
+                                    const newImage = {
+                                        id: Date.now() + Math.random(),
+                                        src: directUrls[urlIndex],
+                                        name: filename,
+                                        size: 0,
+                                        isFromDrive: true,
+                                        driveUrl: url
+                                    };
+                                    setImages(prev => [...prev, newImage]);
+                                    modal.remove();
+                                };
+                                
+                                testImg.onerror = () => {
+                                    // Esta URL no funciona, probar la siguiente
+                                    urlIndex++;
+                                    testUrl();
+                                };
+                                
+                                testImg.src = directUrls[urlIndex];
                             };
-                            setImages(prev => [...prev, newImage]);
+                            
+                            testUrl();
                         } else {
                             alert('Por favor, introduce un enlace válido de Google Drive');
                             return;
                         }
                     }
-                    modal.remove();
                 };
                 
                 // Cerrar modal al hacer clic fuera
@@ -758,6 +795,16 @@
                                             className="w-full h-full object-cover cursor-pointer"
                                             onClick={() => setSelectedImage(image)}
                                             loading="lazy"
+                                            onError={(e) => {
+                                                if (image.isFromDrive) {
+                                                    // Si es de Drive y falla, mostrar imagen de error específica
+                                                    e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTUwIDEwMEgxMDBIMTAwVjE1MEg1MFYxMDBINTBMMTAwIDUwWiIgZmlsbD0iIzlDQTNBRiIvPgo8dGV4dCB4PSIxMDAiIHk9IjE3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNkI3Mjg0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5FcnJvciBjYXJnYW5kbyBEcml2ZTwvdGV4dD4KPHN2Zz4=';
+                                                    e.target.style.filter = 'grayscale(100%)';
+                                                } else {
+                                                    // Para otras imágenes, usar placeholder genérico
+                                                    e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTUwIDEwMEgxMDBIMTAwVjE1MEg1MFYxMDBINTBMMTAwIDUwWiIgZmlsbD0iIzlDQTNBRiIvPgo8dGV4dCB4PSIxMDAiIHk9IjE3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNkI3Mjg0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD4KPHN2Zz4=';
+                                                }
+                                            }}
                                         />
                                     </div>
                                     
@@ -851,12 +898,24 @@
                                             <p className="text-sm opacity-75">{formatFileSize(selectedImage.size)}</p>
                                             <div className="flex gap-2 mt-1">
                                                 {selectedImage.isFromDrive && (
-                                                    <span className="text-xs bg-green-600 px-2 py-1 rounded">Drive</span>
+                                                    <span className="text-xs bg-green-600 px-2 py-1 rounded">📁 Drive</span>
                                                 )}
                                                 {selectedImage.isPublic && (
-                                                    <span className="text-xs bg-blue-600 px-2 py-1 rounded">Público</span>
+                                                    <span className="text-xs bg-blue-600 px-2 py-1 rounded">🌐 Público</span>
                                                 )}
                                             </div>
+                                            {selectedImage.isFromDrive && selectedImage.driveUrl && (
+                                                <div className="mt-2">
+                                                    <a 
+                                                        href={selectedImage.driveUrl} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-xs bg-blue-500 px-2 py-1 rounded hover:bg-blue-600 transition-colors"
+                                                    >
+                                                        Ver en Drive
+                                                    </a>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="text-right">
                                             <p className="text-sm opacity-75">
