@@ -236,12 +236,439 @@
                 setTimeout(() => setIsLoading(false), 1000);
             }, []);
 
-            // Guardar galería cuando cambian las imágenes
+            // Verificar espacio disponible en localStorage
+            const getStorageSize = () => {
+                let total = 0;
+                for (let key in localStorage) {
+                    if (localStorage.hasOwnProperty(key)) {
+                        total += localStorage[key].length + key.length;
+                    }
+                }
+                return total;
+            };
+
+            const formatStorageSize = (bytes) => {
+                const mb = bytes / (1024 * 1024);
+                return `${mb.toFixed(2)} MB`;
+            };
+
+            // Limpiar imágenes base64 grandes para metadatos solamente
+            const cleanImageForStorage = (image) => {
+                const cleanedImage = { ...image };
+                
+                // Si la imagen es muy grande (base64), guardar solo los metadatos
+                if (cleanedImage.src && cleanedImage.src.startsWith('data:') && cleanedImage.src.length > 100000) {
+                    cleanedImage.src = null; // Remover base64 para ahorrar espacio
+                    cleanedImage.isLargeFile = true;
+                    cleanedImage.originalSizeBytes = cleanedImage.src ? cleanedImage.src.length : 0;
+                }
+                
+                return cleanedImage;
+            };
+
+            // Guardar galería cuando cambian las imágenes (con manejo de errores)
             useEffect(() => {
                 if (user && images.length >= 0) {
-                    localStorage.setItem(`gallery_${user.username}`, JSON.stringify(images));
+                    try {
+                        // Limpiar imágenes para ahorrar espacio
+                        const cleanedImages = images.map(cleanImageForStorage);
+                        const galleryData = JSON.stringify(cleanedImages);
+                        
+                        // Verificar si hay suficiente espacio
+                        const currentSize = getStorageSize();
+                        const estimatedNewSize = currentSize + galleryData.length;
+                        const maxStorage = 5 * 1024 * 1024; // 5MB aproximado
+                        
+                        if (estimatedNewSize > maxStorage) {
+                            console.warn('Almacenamiento casi lleno, guardando solo metadatos...');
+                            
+                            // Guardar solo metadatos esenciales
+                            const metadataOnly = images.map(img => ({
+                                id: img.id,
+                                name: img.name,
+                                size: img.size,
+                                isFromDrive: img.isFromDrive,
+                                driveUrl: img.driveUrl,
+                                driveFileId: img.driveFileId,
+                                folderName: img.folderName,
+                                description: img.description,
+                                tags: img.tags,
+                                isPublic: img.isPublic,
+                                uploadDate: img.uploadDate,
+                                addedToGallery: img.addedToGallery,
+                                isLargeFile: img.src && img.src.startsWith('data:') && img.src.length > 100000,
+                                // No guardar src para imágenes base64 grandes
+                                src: img.src && (!img.src.startsWith('data:') || img.src.length <= 100000) ? img.src : null
+                            }));
+                            
+                            localStorage.setItem(`gallery_${user.username}`, JSON.stringify(metadataOnly));
+                            
+                            // Mostrar notificación sobre el almacenamiento
+                            showStorageWarning();
+                        } else {
+                            localStorage.setItem(`gallery_${user.username}`, galleryData);
+                        }
+                        
+                    } catch (error) {
+                        if (error.name === 'QuotaExceededError') {
+                            console.error('Error de almacenamiento: Cuota excedida');
+                            handleStorageQuotaExceeded();
+                        } else {
+                            console.error('Error guardando galería:', error);
+                        }
+                    }
                 }
             }, [images, user]);
+
+            // Manejar error de cuota excedida
+            const handleStorageQuotaExceeded = () => {
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                
+                const content = document.createElement('div');
+                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
+                
+                content.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-4 text-red-600">⚠️ Almacenamiento Lleno</h3>
+                    <div class="space-y-4">
+                        <p class="text-gray-600">
+                            El almacenamiento local del navegador está lleno. Para continuar:
+                        </p>
+                        
+                        <div class="bg-yellow-50 p-3 rounded-lg">
+                            <h4 class="font-medium text-yellow-800 mb-2">Opciones recomendadas:</h4>
+                            <ul class="text-sm text-yellow-700 space-y-1">
+                                <li>• Exporta tu galería como JSON para hacer respaldo</li>
+                                <li>• Elimina algunas imágenes locales grandes</li>
+                                <li>• Usa más imágenes desde Google Drive (URLs)</li>
+                                <li>• Limpia el almacenamiento del navegador</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="bg-blue-50 p-3 rounded-lg">
+                            <p class="text-sm text-blue-700">
+                                <strong>Espacio usado:</strong> ${formatStorageSize(getStorageSize())}<br>
+                                <strong>Imágenes en galería:</strong> ${images.length}<br>
+                                <strong>Desde Drive:</strong> ${images.filter(img => img.isFromDrive).length}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 justify-end mt-6">
+                        <button id="clearStorageBtn" 
+                                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                            Limpiar Todo
+                        </button>
+                        <button id="exportFirstBtn" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            Exportar Primero
+                        </button>
+                        <button id="continueBtn" 
+                                class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                            Continuar Así
+                        </button>
+                    </div>
+                `;
+                
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+                
+                content.querySelector('#clearStorageBtn').onclick = () => {
+                    if (confirm('¿Estás seguro? Esto eliminará toda la galería local.')) {
+                        localStorage.removeItem(`gallery_${user.username}`);
+                        setImages([]);
+                        modal.remove();
+                    }
+                };
+                
+                content.querySelector('#exportFirstBtn').onclick = () => {
+                    modal.remove();
+                    exportGallery();
+                };
+                
+                content.querySelector('#continueBtn').onclick = () => {
+                    modal.remove();
+                };
+            };
+
+            // Mostrar advertencia de almacenamiento
+            const showStorageWarning = () => {
+                const notification = document.createElement('div');
+                notification.className = 'fixed top-4 right-4 bg-yellow-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-sm';
+                notification.innerHTML = `
+                    <div class="flex items-start gap-2">
+                        <span class="text-xl">⚠️</span>
+                        <div>
+                            <p class="font-medium">Almacenamiento Casi Lleno</p>
+                            <p class="text-sm opacity-90">Considera exportar tu galería o usar más imágenes desde Drive</p>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.transform = 'translateX(100%)';
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            };
+
+            // Importar galería desde archivo JSON
+            const importFromJSON = () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            try {
+                                const jsonData = JSON.parse(event.target.result);
+                                
+                                // Validar estructura del JSON
+                                if (!jsonData.images || !Array.isArray(jsonData.images)) {
+                                    alert('El archivo JSON no tiene la estructura correcta de galería');
+                                    return;
+                                }
+                                
+                                // Mostrar modal de confirmación con detalles
+                                showImportConfirmationModal(jsonData);
+                                
+                            } catch (error) {
+                                console.error('Error parsing JSON:', error);
+                                alert('Error al leer el archivo JSON. Asegúrate de que es un archivo válido.');
+                            }
+                        };
+                        reader.readAsText(file);
+                    }
+                };
+                input.click();
+            };
+
+            // Modal de confirmación para importar JSON
+            const showImportConfirmationModal = (jsonData) => {
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                
+                const content = document.createElement('div');
+                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto';
+                
+                const metadata = jsonData.metadata || {};
+                const importImages = jsonData.images || [];
+                const existingIds = new Set(images.map(img => img.id));
+                const newImages = importImages.filter(img => !existingIds.has(img.id));
+                const duplicates = importImages.filter(img => existingIds.has(img.id));
+                
+                content.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-4">📥 Importar Galería JSON</h3>
+                    
+                    <div class="space-y-4">
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <h4 class="font-medium text-blue-800 mb-2">📊 Información de la galería:</h4>
+                            <div class="text-sm text-blue-700 space-y-1">
+                                <p><strong>Nombre:</strong> ${metadata.galleryName || 'Sin nombre'}</p>
+                                <p><strong>Propietario:</strong> ${metadata.owner || 'Desconocido'}</p>
+                                <p><strong>Exportada:</strong> ${metadata.exportDate ? new Date(metadata.exportDate).toLocaleString('es-ES') : 'Fecha desconocida'}</p>
+                                <p><strong>Versión:</strong> ${metadata.version || '1.0'}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-green-50 p-3 rounded-lg">
+                                <h5 class="font-medium text-green-800 mb-1">✅ Nuevas imágenes</h5>
+                                <p class="text-2xl font-bold text-green-600">${newImages.length}</p>
+                                <p class="text-xs text-green-600">Se añadirán a la galería</p>
+                            </div>
+                            
+                            <div class="bg-orange-50 p-3 rounded-lg">
+                                <h5 class="font-medium text-orange-800 mb-1">🔄 Duplicadas</h5>
+                                <p class="text-2xl font-bold text-orange-600">${duplicates.length}</p>
+                                <p class="text-xs text-orange-600">Se omitirán</p>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h4 class="font-medium text-gray-800 mb-2">🔍 Análisis de contenido:</h4>
+                            <div class="text-sm text-gray-600 space-y-1">
+                                <p>• ${importImages.filter(img => img.isFromDrive).length} imágenes desde Google Drive</p>
+                                <p>• ${importImages.filter(img => img.folderName).length} imágenes con carpeta asignada</p>
+                                <p>• ${importImages.filter(img => img.description).length} imágenes con descripción</p>
+                                <p>• ${importImages.filter(img => img.tags && img.tags.length > 0).length} imágenes con etiquetas</p>
+                                <p>• ${importImages.filter(img => img.isPublic).length} imágenes públicas</p>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-yellow-50 p-3 rounded-lg">
+                            <h5 class="font-medium text-yellow-800 mb-1">⚠️ Importante:</h5>
+                            <p class="text-sm text-yellow-700">
+                                Las imágenes se importarán con sus metadatos originales. Las URLs de Google Drive 
+                                se preservarán, pero algunas imágenes podrían no cargar si los permisos han cambiado.
+                            </p>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <h4 class="font-medium text-gray-800">🔧 Opciones de importación:</h4>
+                            <div class="space-y-2">
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="preserveMetadata" checked 
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    Preservar metadatos completos (carpeta, descripción, etiquetas)
+                                </label>
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="validateImages" checked 
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    Validar disponibilidad de imágenes de Drive al importar
+                                </label>
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="updateTimestamps" 
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    Actualizar fechas de importación a ahora
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
+                        <button id="cancelImportBtn" 
+                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                            Cancelar
+                        </button>
+                        <button id="confirmImportBtn" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            Importar ${newImages.length} Imagen${newImages.length !== 1 ? 'es' : ''}
+                        </button>
+                    </div>
+                `;
+                
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+                
+                const preserveMetadataCheckbox = content.querySelector('#preserveMetadata');
+                const validateImagesCheckbox = content.querySelector('#validateImages');
+                const updateTimestampsCheckbox = content.querySelector('#updateTimestamps');
+                const cancelBtn = content.querySelector('#cancelImportBtn');
+                const confirmBtn = content.querySelector('#confirmImportBtn');
+                
+                cancelBtn.onclick = () => modal.remove();
+                
+                confirmBtn.onclick = async () => {
+                    const preserveMetadata = preserveMetadataCheckbox.checked;
+                    const validateImages = validateImagesCheckbox.checked;
+                    const updateTimestamps = updateTimestampsCheckbox.checked;
+                    
+                    // Cerrar modal de confirmación
+                    modal.remove();
+                    
+                    // Mostrar modal de progreso
+                    const progressModal = document.createElement('div');
+                    progressModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                    progressModal.innerHTML = `
+                        <div class="bg-white rounded-lg p-6 text-center min-w-[300px]">
+                            <div class="loading-spinner mx-auto mb-4"></div>
+                            <p class="text-gray-600 mb-2">Importando galería...</p>
+                            <p class="text-sm text-gray-500" id="progressText">Procesando imágenes...</p>
+                            <div class="w-full bg-gray-200 rounded-full h-2 mt-4">
+                                <div class="bg-blue-600 h-2 rounded-full transition-all" id="progressBar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(progressModal);
+                    
+                    const progressText = progressModal.querySelector('#progressText');
+                    const progressBar = progressModal.querySelector('#progressBar');
+                    
+                    try {
+                        const processedImages = [];
+                        
+                        for (let i = 0; i < newImages.length; i++) {
+                            const img = newImages[i];
+                            const progress = ((i + 1) / newImages.length) * 100;
+                            
+                            progressText.textContent = `Procesando ${img.name} (${i + 1}/${newImages.length})`;
+                            progressBar.style.width = `${progress}%`;
+                            
+                            let processedImage = { ...img };
+                            
+                            // Actualizar timestamps si se solicita
+                            if (updateTimestamps) {
+                                processedImage.importedAt = new Date().toISOString();
+                                processedImage.addedToGallery = new Date().toISOString();
+                            }
+                            
+                            // Preservar metadatos si se solicita
+                            if (preserveMetadata) {
+                                // Todos los metadatos ya están en el objeto, no hay que hacer nada extra
+                            } else {
+                                // Limpiar metadatos si no se quieren preservar
+                                delete processedImage.folderName;
+                                delete processedImage.description;
+                                delete processedImage.tags;
+                            }
+                            
+                            // Validar imágenes de Drive si se solicita
+                            if (validateImages && img.isFromDrive && img.src) {
+                                try {
+                                    await new Promise((resolve, reject) => {
+                                        const testImg = new Image();
+                                        testImg.crossOrigin = 'anonymous';
+                                        testImg.onload = resolve;
+                                        testImg.onerror = reject;
+                                        testImg.src = img.src;
+                                        
+                                        // Timeout después de 5 segundos
+                                        setTimeout(reject, 5000);
+                                    });
+                                    
+                                    processedImage.validatedAt = new Date().toISOString();
+                                } catch (error) {
+                                    processedImage.validationFailed = true;
+                                    processedImage.validationError = 'No se pudo cargar la imagen';
+                                }
+                            }
+                            
+                            processedImages.push(processedImage);
+                            
+                            // Pequeña pausa para no bloquear la UI
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                        }
+                        
+                        // Añadir imágenes procesadas a la galería
+                        setImages(prev => [...prev, ...processedImages]);
+                        
+                        // Cerrar modal de progreso
+                        progressModal.remove();
+                        
+                        // Mostrar notificación de éxito
+                        const notification = document.createElement('div');
+                        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all';
+                        notification.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <span>✅</span>
+                                <div>
+                                    <p class="font-medium">Galería importada correctamente</p>
+                                    <p class="text-sm opacity-90">${processedImages.length} imagen${processedImages.length !== 1 ? 'es' : ''} añadida${processedImages.length !== 1 ? 's' : ''}</p>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(notification);
+                        
+                        setTimeout(() => {
+                            notification.style.transform = 'translateX(100%)';
+                            setTimeout(() => notification.remove(), 300);
+                        }, 4000);
+                        
+                    } catch (error) {
+                        progressModal.remove();
+                        console.error('Error importando galería:', error);
+                        alert('Error al importar la galería: ' + error.message);
+                    }
+                };
+                
+                // Cerrar modal al hacer clic fuera
+                modal.onclick = (e) => {
+                    if (e.target === modal) modal.remove();
+                };
+            };
 
             // Cargar imágenes públicas desde el repositorio
             const loadImagesFromGithub = async () => {
@@ -1263,7 +1690,7 @@
                 }
             };
 
-            // Manejar archivos arrastrados
+            // Manejar archivos arrastrados con límite de tamaño
             const handleDrop = useCallback((e) => {
                 e.preventDefault();
                 setIsDragging(false);
@@ -1271,22 +1698,84 @@
                 const files = Array.from(e.dataTransfer.files);
                 const imageFiles = files.filter(file => file.type.startsWith('image/'));
                 
-                imageFiles.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const newImage = {
-                            id: Date.now() + Math.random(),
-                            src: event.target.result,
-                            name: file.name,
-                            size: file.size,
-                            isFromDrive: false,
-                            uploadDate: new Date().toISOString(),
-                            addedToGallery: new Date().toISOString()
-                        };
-                        setImages(prev => [...prev, newImage]);
+                // Verificar tamaño total de archivos
+                const totalSize = imageFiles.reduce((acc, file) => acc + file.size, 0);
+                const maxSizePerFile = 2 * 1024 * 1024; // 2MB por archivo
+                const maxTotalSize = 10 * 1024 * 1024; // 10MB total
+                
+                const largeFiles = imageFiles.filter(file => file.size > maxSizePerFile);
+                
+                if (largeFiles.length > 0) {
+                    const modal = document.createElement('div');
+                    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                    
+                    const content = document.createElement('div');
+                    content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
+                    
+                    content.innerHTML = `
+                        <h3 class="text-lg font-semibold mb-4 text-orange-600">📦 Archivos Grandes Detectados</h3>
+                        <div class="space-y-4">
+                            <p class="text-gray-600">
+                                Algunos archivos son mayores a 2MB. Esto puede causar problemas de almacenamiento.
+                            </p>
+                            
+                            <div class="bg-gray-50 p-3 rounded-lg max-h-32 overflow-y-auto">
+                                <h4 class="font-medium text-gray-800 mb-2">Archivos grandes:</h4>
+                                ${largeFiles.map(file => `
+                                    <p class="text-sm text-gray-600">• ${file.name} (${formatFileSize(file.size)})</p>
+                                `).join('')}
+                            </div>
+                            
+                            <div class="bg-blue-50 p-3 rounded-lg">
+                                <h4 class="font-medium text-blue-800 mb-1">💡 Recomendación:</h4>
+                                <p class="text-sm text-blue-700">
+                                    Sube estos archivos a Google Drive y usa "Importar desde Drive" para mejores resultados.
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-3 justify-end mt-6">
+                            <button id="cancelUploadBtn" 
+                                    class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                Cancelar
+                            </button>
+                            <button id="uploadAnywayBtn" 
+                                    class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
+                                Subir de Todas Formas
+                            </button>
+                        </div>
+                    `;
+                    
+                    modal.appendChild(content);
+                    document.body.appendChild(modal);
+                    
+                    content.querySelector('#cancelUploadBtn').onclick = () => modal.remove();
+                    content.querySelector('#uploadAnywayBtn').onclick = () => {
+                        modal.remove();
+                        processFiles(imageFiles);
                     };
-                    reader.readAsDataURL(file);
-                });
+                } else {
+                    processFiles(imageFiles);
+                }
+                
+                function processFiles(files) {
+                    files.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            const newImage = {
+                                id: Date.now() + Math.random(),
+                                src: event.target.result,
+                                name: file.name,
+                                size: file.size,
+                                isFromDrive: false,
+                                uploadDate: new Date().toISOString(),
+                                addedToGallery: new Date().toISOString()
+                            };
+                            setImages(prev => [...prev, newImage]);
+                        };
+                        reader.readAsDataURL(file);
+                    });
+                }
             }, []);
 
             const handleDragOver = (e) => {
@@ -1299,22 +1788,39 @@
                 setIsDragging(false);
             };
 
-            // Manejar selección de archivos
+            // Manejar selección de archivos con límites
             const handleFileSelect = (e) => {
                 const files = Array.from(e.target.files);
-                files.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const newImage = {
-                            id: Date.now() + Math.random(),
-                            src: event.target.result,
-                            name: file.name,
-                            size: file.size
+                const maxSizePerFile = 2 * 1024 * 1024; // 2MB por archivo
+                const largeFiles = files.filter(file => file.size > maxSizePerFile);
+                
+                if (largeFiles.length > 0) {
+                    if (confirm(`${largeFiles.length} archivo(s) son mayores a 2MB. Esto puede causar problemas de almacenamiento. ¿Continuar de todas formas?\n\nRecomendación: Usa Google Drive para archivos grandes.`)) {
+                        processSelectedFiles(files);
+                    }
+                } else {
+                    processSelectedFiles(files);
+                }
+                
+                function processSelectedFiles(filesToProcess) {
+                    filesToProcess.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            const newImage = {
+                                id: Date.now() + Math.random(),
+                                src: event.target.result,
+                                name: file.name,
+                                size: file.size,
+                                isFromDrive: false,
+                                uploadDate: new Date().toISOString(),
+                                addedToGallery: new Date().toISOString()
+                            };
+                            setImages(prev => [...prev, newImage]);
                         };
-                        setImages(prev => [...prev, newImage]);
-                    };
-                    reader.readAsDataURL(file);
-                });
+                        reader.readAsDataURL(file);
+                    });
+                }
+                
                 e.target.value = ''; // Reset input
             };
 
@@ -1601,6 +2107,20 @@
                                 >
                                     Importar desde Drive
                                 </button>
+                                <button
+                                    onClick={importFromJSON}
+                                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                                    title="Importar galería desde archivo JSON"
+                                >
+                                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <polyline points="14,2 14,8 20,8"/>
+                                        <line x1="16" x2="8" y1="13" y2="13"/>
+                                        <line x1="16" x2="8" y1="17" y2="17"/>
+                                        <polyline points="10,9 9,9 8,9"/>
+                                    </svg>
+                                    Importar JSON
+                                </button>
                                 {images.length > 0 && (
                                     <>
                                         <button
@@ -1636,12 +2156,18 @@
                             />
                         </div>
 
-                        {/* Contador de imágenes */}
+                        {/* Contador de imágenes y estadísticas de almacenamiento */}
                         {images.length > 0 && (
                             <div className="mb-6 text-center">
-                                <p className="text-gray-600">
+                                <p className="text-gray-600 mb-2">
                                     {images.length} imagen{images.length !== 1 ? 'es' : ''} en la galería
                                 </p>
+                                <div className="flex justify-center gap-6 text-sm text-gray-500">
+                                    <span>📁 Drive: {images.filter(img => img.isFromDrive).length}</span>
+                                    <span>💻 Local: {images.filter(img => !img.isFromDrive).length}</span>
+                                    <span>🌐 Públicas: {images.filter(img => img.isPublic).length}</span>
+                                    <span>💾 Almacenamiento: {formatStorageSize(getStorageSize())}</span>
+                                </div>
                             </div>
                         )}
 
