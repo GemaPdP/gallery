@@ -15,6 +15,9 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- JSZip para crear archivos ZIP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
     <!-- Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
     
@@ -442,6 +445,92 @@
                 link.click();
             };
 
+            // Descargar todas las imágenes como ZIP
+            const downloadAllAsZip = async () => {
+                if (images.length === 0) {
+                    alert('No hay imágenes para descargar');
+                    return;
+                }
+
+                try {
+                    // Crear una instancia de JSZip
+                    const zip = new JSZip();
+                    const folder = zip.folder('galeria-joyas-' + user.username);
+                    
+                    // Mostrar indicador de progreso
+                    const progressModal = document.createElement('div');
+                    progressModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                    progressModal.innerHTML = `
+                        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md text-center">
+                            <h3 class="text-lg font-semibold mb-4">Preparando descarga...</h3>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                                <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                            <p id="progress-text" class="text-sm text-gray-600">Procesando imágenes...</p>
+                        </div>
+                    `;
+                    document.body.appendChild(progressModal);
+                    
+                    const progressBar = progressModal.querySelector('#progress-bar');
+                    const progressText = progressModal.querySelector('#progress-text');
+                    
+                    // Procesar cada imagen
+                    for (let i = 0; i < images.length; i++) {
+                        const image = images[i];
+                        const progress = Math.round(((i + 1) / images.length) * 100);
+                        
+                        progressBar.style.width = progress + '%';
+                        progressText.textContent = `Procesando ${i + 1} de ${images.length} imágenes...`;
+                        
+                        try {
+                            // Convertir imagen a blob
+                            const response = await fetch(image.src);
+                            const blob = await response.blob();
+                            
+                            // Generar nombre único para evitar conflictos
+                            let fileName = image.name;
+                            if (!fileName.includes('.')) {
+                                fileName += '.jpg'; // Agregar extensión por defecto
+                            }
+                            
+                            // Agregar al ZIP
+                            folder.file(fileName, blob);
+                            
+                        } catch (error) {
+                            console.error('Error procesando imagen:', image.name, error);
+                            // Continuar con la siguiente imagen
+                        }
+                        
+                        // Pequeña pausa para permitir que la UI se actualice
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    
+                    // Generar el archivo ZIP
+                    progressText.textContent = 'Generando archivo ZIP...';
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    
+                    // Crear enlace de descarga
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(zipBlob);
+                    link.download = `galeria-joyas-${user.username}-${new Date().toISOString().split('T')[0]}.zip`;
+                    link.click();
+                    
+                    // Limpiar
+                    URL.revokeObjectURL(link.href);
+                    document.body.removeChild(progressModal);
+                    
+                } catch (error) {
+                    console.error('Error generando ZIP:', error);
+                    alert('Error al generar el archivo ZIP. Inténtalo de nuevo.');
+                    
+                    // Limpiar modal si existe
+                    const modal = document.querySelector('.fixed.inset-0');
+                    if (modal) {
+                        document.body.removeChild(modal);
+                    }
+                }
+            };
+
             // Compartir galería como HTML (simplificado para evitar errores de template literal)
             const shareAsHTML = async () => {
                 if (images.length === 0) {
@@ -733,6 +822,14 @@
                                             title="Compartir galería como HTML"
                                         >
                                             Compartir HTML
+                                        </button>
+                                        <button
+                                            onClick={downloadAllAsZip}
+                                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                                            title="Descargar todas las imágenes como ZIP"
+                                        >
+                                            <Download className="h-4 w-4" />
+                                            Descargar ZIP
                                         </button>
                                     </>
                                 )}
