@@ -97,6 +97,16 @@
                 max-height: calc(100vh - 2rem);
             }
         }
+        
+        /* Estilos para zoom */
+        .modal-content.zoomed {
+            overflow: auto;
+            cursor: grab;
+        }
+        
+        .modal-content.zoomed:active {
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body>
@@ -189,6 +199,13 @@
             </svg>
         );
 
+        const Edit = ({ className = "w-6 h-6" }) => (
+            <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+        );
+
         const PhotoGallery = () => {
             const [images, setImages] = useState([]);
             const [draggedIndex, setDraggedIndex] = useState(null);
@@ -198,6 +215,7 @@
             const [showLogin, setShowLogin] = useState(false);
             const [loginForm, setLoginForm] = useState({ username: '', email: '' });
             const [isLoading, setIsLoading] = useState(true);
+            const [isZoomed, setIsZoomed] = useState(false);
             const fileInputRef = useRef(null);
 
             // Cargar usuario y galería desde localStorage al iniciar
@@ -308,6 +326,288 @@
                 setShowLogin(false);
             };
 
+            // Modal para editar detalles de archivo
+            const showEditDetailsModal = (imageData) => {
+                const editModal = document.createElement('div');
+                editModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                
+                const content = document.createElement('div');
+                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto';
+                
+                content.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-4">✏️ Editar Detalles del Archivo</h3>
+                    <div class="flex gap-4 mb-4">
+                        <img src="${imageData.src}" alt="Preview" 
+                             class="w-20 h-20 object-cover rounded-lg border border-gray-200">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm text-gray-600 mb-1">Archivo actual:</p>
+                            <p class="text-sm font-medium text-gray-800 truncate">${imageData.name}</p>
+                            <p class="text-xs text-gray-500">${imageData.size ? Math.round(imageData.size / 1024) + ' KB' : 'Tamaño desconocido'}</p>
+                            ${imageData.isFromDrive ? '<p class="text-xs text-green-600">📁 Desde Google Drive</p>' : '<p class="text-xs text-blue-600">💻 Archivo local</p>'}
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Nombre del archivo *
+                            </label>
+                            <input type="text" id="editFileName" value="${imageData.name}" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">Incluye la extensión (.jpg, .png, etc.)</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Carpeta origen ${imageData.isFromDrive ? '(Google Drive)' : '(organización)'}
+                            </label>
+                            <input type="text" id="editFolderName" value="${imageData.folderName || ''}" 
+                                   placeholder="Ej: Vacaciones 2024, Trabajo, Eventos, etc." 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Descripción
+                            </label>
+                            <textarea id="editDescription" placeholder="Describe la imagen, el contexto, la ocasión..." 
+                                      rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">${imageData.description || ''}</textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Etiquetas (separadas por comas)
+                            </label>
+                            <input type="text" id="editTags" value="${imageData.tags ? imageData.tags.join(', ') : ''}" 
+                                   placeholder="paisaje, familia, trabajo, evento, etc." 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">Usa comas para separar múltiples etiquetas</p>
+                        </div>
+                        
+                        ${imageData.isFromDrive ? `
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Enlace de Google Drive
+                                </label>
+                                <input type="url" id="editDriveUrl" value="${imageData.driveUrl || ''}" 
+                                       placeholder="https://drive.google.com/file/d/..." 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <p class="text-xs text-gray-500 mt-1">URL original del archivo en Google Drive</p>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">🔧 Acciones adicionales:</h4>
+                            <div class="flex gap-2 flex-wrap">
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="markAsPublic" ${imageData.isPublic ? 'checked' : ''} 
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    Marcar como público
+                                </label>
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="updateTimestamp" 
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    Actualizar fecha de modificación
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
+                        <button id="cancelEditBtn" 
+                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                            Cancelar
+                        </button>
+                        <button id="resetBtn" 
+                                class="px-4 py-2 text-orange-600 border border-orange-300 rounded-lg hover:bg-orange-50 transition-colors">
+                            Restablecer
+                        </button>
+                        <button id="saveEditBtn" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            Guardar Cambios
+                        </button>
+                    </div>
+                `;
+                
+                editModal.appendChild(content);
+                document.body.appendChild(editModal);
+                
+                const fileNameInput = content.querySelector('#editFileName');
+                const folderNameInput = content.querySelector('#editFolderName');
+                const descriptionInput = content.querySelector('#editDescription');
+                const tagsInput = content.querySelector('#editTags');
+                const driveUrlInput = content.querySelector('#editDriveUrl');
+                const publicCheckbox = content.querySelector('#markAsPublic');
+                const timestampCheckbox = content.querySelector('#updateTimestamp');
+                const cancelBtn = content.querySelector('#cancelEditBtn');
+                const resetBtn = content.querySelector('#resetBtn');
+                const saveBtn = content.querySelector('#saveEditBtn');
+                
+                // Función para restablecer valores originales
+                const resetForm = () => {
+                    fileNameInput.value = imageData.name;
+                    folderNameInput.value = imageData.folderName || '';
+                    descriptionInput.value = imageData.description || '';
+                    tagsInput.value = imageData.tags ? imageData.tags.join(', ') : '';
+                    if (driveUrlInput) driveUrlInput.value = imageData.driveUrl || '';
+                    publicCheckbox.checked = imageData.isPublic || false;
+                    timestampCheckbox.checked = false;
+                };
+                
+                cancelBtn.onclick = () => editModal.remove();
+                resetBtn.onclick = resetForm;
+                
+                saveBtn.onclick = () => {
+                    const newFileName = fileNameInput.value.trim();
+                    if (!newFileName) {
+                        alert('El nombre del archivo es obligatorio');
+                        fileNameInput.focus();
+                        return;
+                    }
+                    
+                    const folderName = folderNameInput.value.trim();
+                    const description = descriptionInput.value.trim();
+                    const tags = tagsInput.value.trim().split(',').map(tag => tag.trim()).filter(tag => tag);
+                    const driveUrl = driveUrlInput ? driveUrlInput.value.trim() : imageData.driveUrl;
+                    const isPublic = publicCheckbox.checked;
+                    const updateTimestamp = timestampCheckbox.checked;
+                    
+                    // Crear objeto con los cambios
+                    const updatedData = {
+                        ...imageData,
+                        name: newFileName,
+                        folderName: folderName || null,
+                        description: description || null,
+                        tags: tags.length > 0 ? tags : null,
+                        isPublic: isPublic,
+                        lastModified: updateTimestamp ? new Date().toISOString() : imageData.lastModified
+                    };
+                    
+                    if (imageData.isFromDrive && driveUrl) {
+                        updatedData.driveUrl = driveUrl;
+                    }
+                    
+                    // Actualizar la imagen en el estado
+                    setImages(prev => prev.map(img => 
+                        img.id === imageData.id ? updatedData : img
+                    ));
+                    
+                    // Si la imagen está seleccionada en el modal, actualizarla también
+                    if (selectedImage && selectedImage.id === imageData.id) {
+                        setSelectedImage(updatedData);
+                    }
+                    
+                    editModal.remove();
+                    
+                    // Mostrar confirmación
+                    const notification = document.createElement('div');
+                    notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all';
+                    notification.innerHTML = '✅ Detalles actualizados correctamente';
+                    document.body.appendChild(notification);
+                    
+                    setTimeout(() => {
+                        notification.style.transform = 'translateX(100%)';
+                        setTimeout(() => notification.remove(), 300);
+                    }, 2000);
+                };
+                
+                // Cerrar modal al hacer clic fuera
+                editModal.onclick = (e) => {
+                    if (e.target === editModal) editModal.remove();
+                };
+                
+                // Enfocar primer campo
+                fileNameInput.focus();
+                fileNameInput.select();
+            };
+
+            // Modal para metadatos adicionales de Drive
+            const showDriveMetadataModal = (imageData) => {
+                const metaModal = document.createElement('div');
+                metaModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                
+                const content = document.createElement('div');
+                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
+                
+                content.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-4">📁 Información Adicional</h3>
+                    <p class="text-gray-600 mb-4">Añade información adicional sobre esta imagen de Drive:</p>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Nombre de carpeta origen (opcional)
+                            </label>
+                            <input type="text" id="folderName" placeholder="Ej: Vacaciones 2024, Trabajo, etc." 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Descripción (opcional)
+                            </label>
+                            <textarea id="description" placeholder="Describe la imagen o el contexto..." 
+                                      rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Etiquetas (separadas por comas)
+                            </label>
+                            <input type="text" id="tags" placeholder="paisaje, familia, trabajo, etc." 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 justify-end mt-6">
+                        <button id="skipBtn" 
+                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                            Omitir
+                        </button>
+                        <button id="saveBtn" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            Guardar Info
+                        </button>
+                    </div>
+                `;
+                
+                metaModal.appendChild(content);
+                document.body.appendChild(metaModal);
+                
+                const folderInput = content.querySelector('#folderName');
+                const descriptionInput = content.querySelector('#description');
+                const tagsInput = content.querySelector('#tags');
+                const skipBtn = content.querySelector('#skipBtn');
+                const saveBtn = content.querySelector('#saveBtn');
+                
+                skipBtn.onclick = () => metaModal.remove();
+                
+                saveBtn.onclick = () => {
+                    const folderName = folderInput.value.trim();
+                    const description = descriptionInput.value.trim();
+                    const tags = tagsInput.value.trim().split(',').map(tag => tag.trim()).filter(tag => tag);
+                    
+                    // Actualizar la imagen con los metadatos
+                    setImages(prev => prev.map(img => 
+                        img.id === imageData.id ? {
+                            ...img,
+                            folderName: folderName || null,
+                            description: description || null,
+                            tags: tags.length > 0 ? tags : null
+                        } : img
+                    ));
+                    
+                    metaModal.remove();
+                };
+                
+                // Cerrar modal al hacer clic fuera
+                metaModal.onclick = (e) => {
+                    if (e.target === metaModal) metaModal.remove();
+                };
+                
+                folderInput.focus();
+            };
+
             // Importar desde Google Drive
             const importFromGoogleDrive = () => {
                 const modal = document.createElement('div');
@@ -352,8 +652,11 @@
                 importBtn.onclick = () => {
                     const url = urlInput.value.trim();
                     if (url) {
+                        // Limpiar URL eliminando parámetros innecesarios como view?usp=sharing
+                        const cleanUrl = url.replace(/[?&]usp=sharing/g, '').replace(/[?&]view/g, '');
+                        
                         // Convertir enlace de Google Drive a enlace directo con múltiples formatos
-                        const fileId = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                        const fileId = cleanUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
                         if (fileId) {
                             // Intentar diferentes formatos de URL de Google Drive
                             const directUrls = [
@@ -379,15 +682,25 @@
                                 testImg.crossOrigin = 'anonymous';
                                 
                                 testImg.onload = () => {
-                                    // Esta URL funciona, usar esta
+                                    // Esta URL funciona, preguntar por información adicional
                                     const newImage = {
                                         id: Date.now() + Math.random(),
                                         src: directUrls[urlIndex],
                                         name: filename,
                                         size: 0,
                                         isFromDrive: true,
-                                        driveUrl: url
+                                        driveUrl: cleanUrl,
+                                        driveFileId: fileId[1],
+                                        folderName: null,
+                                        description: null,
+                                        uploadDate: new Date().toISOString()
                                     };
+                                    
+                                    // Mostrar modal para información adicional
+                                    setTimeout(() => {
+                                        showDriveMetadataModal(newImage);
+                                    }, 100);
+                                    
                                     setImages(prev => [...prev, newImage]);
                                     modal.remove();
                                 };
@@ -419,22 +732,535 @@
 
             // Exportar galería como JSON
             const exportGallery = () => {
-                const galleryData = images.map(img => ({
-                    id: img.id,
-                    src: img.src,
-                    name: img.name,
-                    size: img.size,
-                    isFromDrive: img.isFromDrive || false,
-                    isPublic: img.isPublic || false
-                }));
+                const galleryData = {
+                    metadata: {
+                        galleryName: `Galería de Gema Pinedo de Pedro`,
+                        owner: user.username,
+                        ownerEmail: user.email,
+                        exportDate: new Date().toISOString(),
+                        totalImages: images.length,
+                        driveImages: images.filter(img => img.isFromDrive).length,
+                        publicImages: images.filter(img => img.isPublic).length,
+                        version: "2.0"
+                    },
+                    images: images.map(img => ({
+                        id: img.id,
+                        src: img.src,
+                        name: img.name,
+                        size: img.size,
+                        isFromDrive: img.isFromDrive || false,
+                        isPublic: img.isPublic || false,
+                        // Metadatos de Google Drive
+                        driveUrl: img.driveUrl || null,
+                        driveFileId: img.driveFileId || null,
+                        folderName: img.folderName || null,
+                        // Metadatos adicionales
+                        description: img.description || null,
+                        tags: img.tags || null,
+                        uploadDate: img.uploadDate || null,
+                        // Metadatos técnicos
+                        format: img.name ? img.name.split('.').pop()?.toLowerCase() : null,
+                        addedToGallery: img.addedToGallery || new Date().toISOString()
+                    }))
+                };
                 
                 const dataStr = JSON.stringify(galleryData, null, 2);
                 const dataBlob = new Blob([dataStr], { type: 'application/json' });
                 
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(dataBlob);
-                link.download = 'gallery.json';
+                link.download = `galeria-${user.username}-${new Date().toISOString().split('T')[0]}.json`;
                 link.click();
+            };
+
+            // Convertir imagen a base64
+            const convertToBase64 = (imgSrc) => {
+                return new Promise((resolve, reject) => {
+                    if (imgSrc.startsWith('data:')) {
+                        // Ya es base64
+                        resolve(imgSrc);
+                    } else {
+                        // Convertir URL a base64
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        };
+                        img.onerror = () => reject(new Error('Error cargando imagen'));
+                        img.src = imgSrc;
+                    }
+                });
+            };
+
+            // Compartir galería como HTML embebido
+            const shareAsHTML = async () => {
+                if (images.length === 0) {
+                    alert('No hay imágenes para compartir');
+                    return;
+                }
+
+                // Mostrar modal de carga
+                const loadingModal = document.createElement('div');
+                loadingModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                loadingModal.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 text-center">
+                        <div class="loading-spinner mx-auto mb-4"></div>
+                        <p class="text-gray-600">Generando HTML con imágenes embebidas...</p>
+                        <p class="text-sm text-gray-500 mt-2">Esto puede tomar un momento</p>
+                    </div>
+                `;
+                document.body.appendChild(loadingModal);
+
+                try {
+                    // Convertir todas las imágenes a base64
+                    const embeddedImages = [];
+                    for (let i = 0; i < images.length; i++) {
+                        const img = images[i];
+                        try {
+                            const base64 = await convertToBase64(img.src);
+                            embeddedImages.push({
+                                ...img,
+                                embeddedSrc: base64
+                            });
+                        } catch (error) {
+                            console.error(`Error convirtiendo imagen ${img.name}:`, error);
+                            // Usar placeholder si falla
+                            embeddedImages.push({
+                                ...img,
+                                embeddedSrc: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDMwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xNTAgNTBMMjAwIDEwMEgxNTBIMTUwVjE1MEgxMDBWMTAwSDEwMEwxNTAgNTBaIiBmaWxsPSIjOUNBM0FGIi8+Cjx0ZXh0IHg9IjE1MCIgeT0iMTgwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM2QjcyODQiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkltYWdlbiBubyBkaXNwb25pYmxlPC90ZXh0Pgo8L3N2Zz4=',
+                                failed: true
+                            });
+                        }
+                    }
+
+                    // Generar HTML
+                    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galería de Gema Pinedo de Pedro</title>
+    <meta name="description" content="Galería fotográfica compartida">
+    <meta name="author" content="${user.username}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header .info {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            min-width: 120px;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px;
+            margin-top: 30px;
+        }
+        
+        .image-card {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .image-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+        }
+        
+        .image-container {
+            position: relative;
+            width: 100%;
+            height: 250px;
+            overflow: hidden;
+        }
+        
+        .image-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+        
+        .image-card:hover img {
+            transform: scale(1.05);
+        }
+        
+        .image-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        
+        .badge {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+            backdrop-filter: blur(10px);
+        }
+        
+        .badge.drive {
+            background: rgba(34, 197, 94, 0.9);
+            color: white;
+        }
+        
+        .badge.public {
+            background: rgba(59, 130, 246, 0.9);
+            color: white;
+        }
+        
+        .badge.failed {
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+        }
+        
+        .image-info {
+            padding: 20px;
+        }
+        
+        .image-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            word-break: break-word;
+        }
+        
+        .image-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .detail-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .detail-icon {
+            width: 16px;
+            height: 16px;
+            opacity: 0.7;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 30px;
+            border-top: 2px solid #f0f0f0;
+            color: #666;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .gallery {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .stats {
+                gap: 20px;
+            }
+            
+            .stat {
+                min-width: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📸 Galería de Gema Pinedo de Pedro</h1>
+            <div class="info">
+                <p>Galería fotográfica compartida</p>
+                <p>Generada el ${new Date().toLocaleDateString('es-ES', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                })}</p>
+            </div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-number">${embeddedImages.length}</div>
+                    <div class="stat-label">Imágenes</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">${embeddedImages.filter(img => img.isFromDrive).length}</div>
+                    <div class="stat-label">Desde Drive</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">${embeddedImages.filter(img => img.isPublic).length}</div>
+                    <div class="stat-label">Públicas</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">${Math.round(embeddedImages.reduce((acc, img) => acc + (img.size || 0), 0) / 1024 / 1024 * 100) / 100}</div>
+                    <div class="stat-label">MB Total</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="gallery">
+            ${embeddedImages.map((img, index) => `
+                <div class="image-card">
+                    <div class="image-container">
+                        <img src="${img.embeddedSrc}" alt="${img.name}" loading="lazy">
+                        <div class="image-overlay">
+                            ${img.isFromDrive ? '<span class="badge drive">📁 Drive</span>' : ''}
+                            ${img.isPublic ? '<span class="badge public">🌐 Público</span>' : ''}
+                            ${img.failed ? '<span class="badge failed">❌ Error</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="image-info">
+                        <div class="image-name">${img.name}</div>
+                        <div class="image-details">
+                            <div class="detail-item">
+                                <span class="detail-icon">📏</span>
+                                <span>${img.size ? Math.round(img.size / 1024) + ' KB' : 'Tamaño desconocido'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-icon">🔢</span>
+                                <span>Imagen #${index + 1}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-icon">🗂️</span>
+                                <span>${img.isFromDrive ? 'Google Drive' : 'Local'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-icon">🌐</span>
+                                <span>${img.isPublic ? 'Público' : 'Privado'}</span>
+                            </div>
+                            ${img.folderName ? `
+                                <div class="detail-item" style="grid-column: 1 / -1;">
+                                    <span class="detail-icon">📁</span>
+                                    <span><strong>Carpeta:</strong> ${img.folderName}</span>
+                                </div>
+                            ` : ''}
+                            ${img.description ? `
+                                <div class="detail-item" style="grid-column: 1 / -1;">
+                                    <span class="detail-icon">📝</span>
+                                    <span><strong>Descripción:</strong> ${img.description}</span>
+                                </div>
+                            ` : ''}
+                            ${img.tags && img.tags.length > 0 ? `
+                                <div class="detail-item" style="grid-column: 1 / -1;">
+                                    <span class="detail-icon">🏷️</span>
+                                    <span><strong>Etiquetas:</strong> ${img.tags.join(', ')}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        
+
+        
+        <div class="footer">
+            <p>Galería generada con ❤️ por <strong>Gema Pinedo de Pedro</strong></p>
+            <p>Creada el ${new Date().toLocaleString('es-ES')}</p>
+            <p><a href="mailto:${user.email}">Contactar</a></p>
+        </div>
+    </div>
+</body>
+</html>`;
+
+                    // Cerrar modal de carga
+                    loadingModal.remove();
+
+                    // Mostrar modal de resultado
+                    const resultModal = document.createElement('div');
+                    resultModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                    
+                    const content = document.createElement('div');
+                    content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto';
+                    
+                    content.innerHTML = `
+                        <h3 class="text-xl font-bold mb-4">📤 Compartir Galería HTML</h3>
+                        <p class="text-gray-600 mb-4">
+                            HTML generado con ${embeddedImages.length} imágenes embebidas y metadatos completos
+                        </p>
+                        
+                        <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                            <p class="text-sm text-gray-700 mb-2">
+                                <strong>Estadísticas:</strong>
+                            </p>
+                            <ul class="text-sm text-gray-600 space-y-1">
+                                <li>• ${embeddedImages.filter(img => !img.failed).length} imágenes embebidas correctamente</li>
+                                <li>• ${embeddedImages.filter(img => img.failed).length} imágenes con errores (placeholder incluido)</li>
+                                <li>• ${embeddedImages.filter(img => img.isFromDrive).length} imágenes desde Google Drive</li>
+                                <li>• Tamaño aproximado: ${Math.round(htmlContent.length / 1024)} KB</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="flex gap-3 flex-wrap">
+                            <button id="copyBtn" 
+                                    class="flex-1 min-w-[120px] px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                📋 Copiar HTML
+                            </button>
+                            <button id="downloadBtn" 
+                                    class="flex-1 min-w-[120px] px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                💾 Descargar HTML
+                            </button>
+                            <button id="previewBtn" 
+                                    class="flex-1 min-w-[120px] px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
+                                👁️ Vista Previa
+                            </button>
+                        </div>
+                        
+                        <div class="flex justify-end mt-4">
+                            <button id="closeBtn" 
+                                    class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                Cerrar
+                            </button>
+                        </div>
+                    `;
+                    
+                    resultModal.appendChild(content);
+                    document.body.appendChild(resultModal);
+                    
+                    // Eventos de botones
+                    content.querySelector('#copyBtn').onclick = async () => {
+                        try {
+                            await navigator.clipboard.writeText(htmlContent);
+                            alert('HTML copiado al portapapeles');
+                        } catch (error) {
+                            // Fallback para navegadores sin clipboard API
+                            const textarea = document.createElement('textarea');
+                            textarea.value = htmlContent;
+                            document.body.appendChild(textarea);
+                            textarea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textarea);
+                            alert('HTML copiado al portapapeles');
+                        }
+                    };
+                    
+                    content.querySelector('#downloadBtn').onclick = () => {
+                        const blob = new Blob([htmlContent], { type: 'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `galeria-gema-pinedo-${new Date().toISOString().split('T')[0]}.html`;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                    };
+                    
+                    content.querySelector('#previewBtn').onclick = () => {
+                        const previewWindow = window.open('', '_blank');
+                        previewWindow.document.write(htmlContent);
+                        previewWindow.document.close();
+                    };
+                    
+                    content.querySelector('#closeBtn').onclick = () => {
+                        resultModal.remove();
+                    };
+                    
+                    // Cerrar modal al hacer clic fuera
+                    resultModal.onclick = (e) => {
+                        if (e.target === resultModal) resultModal.remove();
+                    };
+
+                } catch (error) {
+                    loadingModal.remove();
+                    console.error('Error generando HTML:', error);
+                    alert('Error al generar el HTML compartible');
+                }
             };
 
             // Manejar archivos arrastrados
@@ -452,7 +1278,10 @@
                             id: Date.now() + Math.random(),
                             src: event.target.result,
                             name: file.name,
-                            size: file.size
+                            size: file.size,
+                            isFromDrive: false,
+                            uploadDate: new Date().toISOString(),
+                            addedToGallery: new Date().toISOString()
                         };
                         setImages(prev => [...prev, newImage]);
                     };
@@ -538,6 +1367,26 @@
                 }
             };
 
+            // Descargar imagen
+            const downloadImage = async () => {
+                if (!selectedImage) return;
+                
+                try {
+                    const response = await fetch(selectedImage.src);
+                    const blob = await response.blob();
+                    
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = selectedImage.name || `imagen-${Date.now()}.jpg`;
+                    link.click();
+                    
+                    URL.revokeObjectURL(link.href);
+                } catch (error) {
+                    console.error('Error descargando la imagen:', error);
+                    alert('No se pudo descargar la imagen');
+                }
+            };
+
             // Navegación con teclado
             useEffect(() => {
                 const handleKeyDown = (e) => {
@@ -554,6 +1403,11 @@
                             case 'Escape':
                                 e.preventDefault();
                                 setSelectedImage(null);
+                                setIsZoomed(false);
+                                break;
+                            case ' ':
+                                e.preventDefault();
+                                setIsZoomed(!isZoomed);
                                 break;
                         }
                     }
@@ -561,7 +1415,7 @@
 
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [selectedImage, images]);
+            }, [selectedImage, images, isZoomed]);
 
             // Formatear tamaño de archivo
             const formatFileSize = (bytes) => {
@@ -748,14 +1602,28 @@
                                     Importar desde Drive
                                 </button>
                                 {images.length > 0 && (
-                                    <button
-                                        onClick={exportGallery}
-                                        className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-                                        title="Exportar galería como JSON"
-                                    >
-                                        <Download className="h-4 w-4" />
-                                        Exportar
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={exportGallery}
+                                            className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                                            title="Exportar galería como JSON"
+                                        >
+                                            <Download className="h-4 w-4" />
+                                            Exportar JSON
+                                        </button>
+                                        <button
+                                            onClick={shareAsHTML}
+                                            className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2"
+                                            title="Compartir galería como HTML embebido"
+                                        >
+                                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                                <polyline points="15,3 21,3 21,9"/>
+                                                <line x1="10" x2="21" y1="14" y2="3"/>
+                                            </svg>
+                                            Compartir HTML
+                                        </button>
+                                    </>
                                 )}
                             </div>
                             <input
@@ -815,19 +1683,36 @@
                                             <p className="text-xs">{formatFileSize(image.size)}</p>
                                             {image.isFromDrive && <p className="text-xs text-green-300">📁 Drive</p>}
                                             {image.isPublic && <p className="text-xs text-blue-300">🌐 Público</p>}
+                                            {image.folderName && <p className="text-xs text-purple-300">📁 {image.folderName}</p>}
+                                            {image.tags && image.tags.length > 0 && (
+                                                <p className="text-xs text-yellow-300">🏷️ {image.tags.slice(0, 2).join(', ')}</p>
+                                            )}
                                         </div>
                                     </div>
 
-                                    {/* Botón de eliminar */}
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            removeImage(image.id);
-                                        }}
-                                        className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
+                                    {/* Botones de acción */}
+                                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                showEditDetailsModal(image);
+                                            }}
+                                            className="p-1 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
+                                            title="Editar detalles"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeImage(image.id);
+                                            }}
+                                            className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                                            title="Eliminar imagen"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    </div>
 
                                     {/* Indicador de arrastre */}
                                     <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -854,17 +1739,66 @@
                     {/* Modal de imagen completa con navegación */}
                     {selectedImage && (
                         <div className="fixed inset-0 bg-black bg-opacity-90 modal-backdrop flex items-center justify-center z-50 p-4">
-                            <div className="relative max-w-4xl max-h-full modal-content">
-                                {/* Botón cerrar */}
-                                <button
-                                    onClick={() => setSelectedImage(null)}
-                                    className="absolute top-4 right-4 z-10 p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
-                                >
-                                    <X className="h-6 w-6" />
-                                </button>
+                            <div className={`relative modal-content transition-all duration-300 ${
+                                isZoomed ? 'w-full h-full max-w-none max-h-none overflow-auto' : 'max-w-4xl max-h-full'
+                            }`}>
+                                {/* Botones de control */}
+                                <div className="absolute top-4 right-4 z-10 flex gap-2">
+                                    {/* Botón descargar */}
+                                    <button
+                                        onClick={downloadImage}
+                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
+                                        title="Descargar imagen"
+                                    >
+                                        <Download className="h-6 w-6" />
+                                    </button>
+                                    
+                                    {/* Botón editar */}
+                                    <button
+                                        onClick={() => showEditDetailsModal(selectedImage)}
+                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
+                                        title="Editar detalles"
+                                    >
+                                        <Edit className="h-6 w-6" />
+                                    </button>
+                                    
+                                    {/* Botón zoom */}
+                                    <button
+                                        onClick={() => setIsZoomed(!isZoomed)}
+                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
+                                        title={isZoomed ? "Zoom normal" : "Ampliar imagen"}
+                                    >
+                                        {isZoomed ? (
+                                            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="11" cy="11" r="8"/>
+                                                <path d="m21 21-4.35-4.35"/>
+                                                <line x1="8" x2="14" y1="11" y2="11"/>
+                                            </svg>
+                                        ) : (
+                                            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="11" cy="11" r="8"/>
+                                                <path d="m21 21-4.35-4.35"/>
+                                                <line x1="11" x2="11" y1="8" y2="14"/>
+                                                <line x1="8" x2="14" y1="11" y2="11"/>
+                                            </svg>
+                                        )}
+                                    </button>
+                                    
+                                    {/* Botón cerrar */}
+                                    <button
+                                        onClick={() => {
+                                            setSelectedImage(null);
+                                            setIsZoomed(false);
+                                        }}
+                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
+                                        title="Cerrar"
+                                    >
+                                        <X className="h-6 w-6" />
+                                    </button>
+                                </div>
 
                                 {/* Navegación anterior */}
-                                {getCurrentImageIndex() > 0 && (
+                                {getCurrentImageIndex() > 0 && !isZoomed && (
                                     <button
                                         onClick={goToPreviousImage}
                                         className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
@@ -874,7 +1808,7 @@
                                 )}
 
                                 {/* Navegación siguiente */}
-                                {getCurrentImageIndex() < images.length - 1 && (
+                                {getCurrentImageIndex() < images.length - 1 && !isZoomed && (
                                     <button
                                         onClick={goToNextImage}
                                         className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
@@ -887,7 +1821,13 @@
                                 <img
                                     src={selectedImage.src}
                                     alt={selectedImage.name}
-                                    className="max-w-full max-h-full object-contain rounded-lg"
+                                    className={`rounded-lg cursor-pointer transition-all duration-300 ${
+                                        isZoomed 
+                                            ? 'w-auto h-auto max-w-none max-h-none' 
+                                            : 'max-w-full max-h-full object-contain'
+                                    }`}
+                                    onClick={() => setIsZoomed(!isZoomed)}
+                                    style={isZoomed ? { minWidth: '100%', minHeight: '100%' } : {}}
                                 />
 
                                 {/* Información de la imagen */}
@@ -896,14 +1836,27 @@
                                         <div>
                                             <p className="font-medium">{selectedImage.name}</p>
                                             <p className="text-sm opacity-75">{formatFileSize(selectedImage.size)}</p>
-                                            <div className="flex gap-2 mt-1">
+                                            <div className="flex gap-2 mt-1 flex-wrap">
                                                 {selectedImage.isFromDrive && (
                                                     <span className="text-xs bg-green-600 px-2 py-1 rounded">📁 Drive</span>
                                                 )}
                                                 {selectedImage.isPublic && (
                                                     <span className="text-xs bg-blue-600 px-2 py-1 rounded">🌐 Público</span>
                                                 )}
+                                                {selectedImage.folderName && (
+                                                    <span className="text-xs bg-purple-600 px-2 py-1 rounded">📁 {selectedImage.folderName}</span>
+                                                )}
                                             </div>
+                                            {selectedImage.description && (
+                                                <p className="text-xs opacity-75 mt-2">{selectedImage.description}</p>
+                                            )}
+                                            {selectedImage.tags && selectedImage.tags.length > 0 && (
+                                                <div className="flex gap-1 mt-2 flex-wrap">
+                                                    {selectedImage.tags.map(tag => (
+                                                        <span key={tag} className="text-xs bg-gray-600 px-2 py-1 rounded">#{tag}</span>
+                                                    ))}
+                                                </div>
+                                            )}
                                             {selectedImage.isFromDrive && selectedImage.driveUrl && (
                                                 <div className="mt-2">
                                                     <a 
@@ -926,11 +1879,22 @@
                                 </div>
 
                                 {/* Indicador de navegación con teclado */}
-                                <div className="absolute top-4 left-4 text-white bg-black bg-opacity-50 rounded-lg p-2">
-                                    <p className="text-xs opacity-75">
-                                        ← → Navegar | ESC Cerrar
-                                    </p>
-                                </div>
+                                {!isZoomed && (
+                                    <div className="absolute top-4 left-4 text-white bg-black bg-opacity-50 rounded-lg p-2">
+                                        <p className="text-xs opacity-75">
+                                            ← → Navegar | ESPACIO Zoom | ESC Cerrar
+                                        </p>
+                                    </div>
+                                )}
+                                
+                                {/* Indicador de zoom */}
+                                {isZoomed && (
+                                    <div className="absolute top-4 left-4 text-white bg-black bg-opacity-50 rounded-lg p-2">
+                                        <p className="text-xs opacity-75">
+                                            Click para zoom | ESPACIO Normal | ESC Cerrar
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
