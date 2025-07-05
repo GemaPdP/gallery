@@ -8,8 +8,8 @@
     <meta name="author" content="Gema Pinedo de Pedro">
     
     <!-- React y dependencias -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <!-- Tailwind CSS -->
@@ -106,6 +106,38 @@
         
         .modal-content.zoomed:active {
             cursor: grabbing;
+        }
+        
+        /* Estilos para hacer las imágenes clickeables en HTML exportado */
+        .image-card img {
+            cursor: pointer;
+        }
+        
+        .image-card a {
+            display: block;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        .image-card a::after {
+            content: '🔍';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        
+        .image-card:hover a::after {
+            opacity: 1;
         }
     </style>
 </head>
@@ -226,7 +258,7 @@
                     setUser(userData);
                     
                     // Cargar galería específica del usuario
-                    const userGallery = localStorage.getItem(`gallery_${userData.username}`);
+                    const userGallery = localStorage.getItem('gallery_' + userData.username);
                     if (userGallery) {
                         setImages(JSON.parse(userGallery));
                     }
@@ -249,453 +281,23 @@
 
             const formatStorageSize = (bytes) => {
                 const mb = bytes / (1024 * 1024);
-                return `${mb.toFixed(2)} MB`;
+                return mb.toFixed(2) + ' MB';
             };
 
-            // Limpiar imágenes base64 grandes para metadatos solamente
-            const cleanImageForStorage = (image) => {
-                const cleanedImage = { ...image };
-                
-                // Si la imagen es muy grande (base64), guardar solo los metadatos
-                if (cleanedImage.src && cleanedImage.src.startsWith('data:') && cleanedImage.src.length > 100000) {
-                    cleanedImage.src = null; // Remover base64 para ahorrar espacio
-                    cleanedImage.isLargeFile = true;
-                    cleanedImage.originalSizeBytes = cleanedImage.src ? cleanedImage.src.length : 0;
-                }
-                
-                return cleanedImage;
-            };
-
-            // Guardar galería cuando cambian las imágenes (con manejo de errores)
+            // Guardar galería cuando cambian las imágenes
             useEffect(() => {
                 if (user && images.length >= 0) {
                     try {
-                        // Limpiar imágenes para ahorrar espacio
-                        const cleanedImages = images.map(cleanImageForStorage);
-                        const galleryData = JSON.stringify(cleanedImages);
-                        
-                        // Verificar si hay suficiente espacio
-                        const currentSize = getStorageSize();
-                        const estimatedNewSize = currentSize + galleryData.length;
-                        const maxStorage = 5 * 1024 * 1024; // 5MB aproximado
-                        
-                        if (estimatedNewSize > maxStorage) {
-                            console.warn('Almacenamiento casi lleno, guardando solo metadatos...');
-                            
-                            // Guardar solo metadatos esenciales
-                            const metadataOnly = images.map(img => ({
-                                id: img.id,
-                                name: img.name,
-                                size: img.size,
-                                isFromDrive: img.isFromDrive,
-                                driveUrl: img.driveUrl,
-                                driveFileId: img.driveFileId,
-                                folderName: img.folderName,
-                                description: img.description,
-                                tags: img.tags,
-                                isPublic: img.isPublic,
-                                uploadDate: img.uploadDate,
-                                addedToGallery: img.addedToGallery,
-                                isLargeFile: img.src && img.src.startsWith('data:') && img.src.length > 100000,
-                                // No guardar src para imágenes base64 grandes
-                                src: img.src && (!img.src.startsWith('data:') || img.src.length <= 100000) ? img.src : null
-                            }));
-                            
-                            localStorage.setItem(`gallery_${user.username}`, JSON.stringify(metadataOnly));
-                            
-                            // Mostrar notificación sobre el almacenamiento
-                            showStorageWarning();
-                        } else {
-                            localStorage.setItem(`gallery_${user.username}`, galleryData);
-                        }
-                        
+                        const galleryData = JSON.stringify(images);
+                        localStorage.setItem('gallery_' + user.username, galleryData);
                     } catch (error) {
                         if (error.name === 'QuotaExceededError') {
                             console.error('Error de almacenamiento: Cuota excedida');
-                            handleStorageQuotaExceeded();
-                        } else {
-                            console.error('Error guardando galería:', error);
+                            alert('Almacenamiento lleno. Por favor, elimina algunas imágenes o exporta tu galería.');
                         }
                     }
                 }
             }, [images, user]);
-
-            // Manejar error de cuota excedida
-            const handleStorageQuotaExceeded = () => {
-                const modal = document.createElement('div');
-                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-                
-                const content = document.createElement('div');
-                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
-                
-                content.innerHTML = `
-                    <h3 class="text-lg font-semibold mb-4 text-red-600">⚠️ Almacenamiento Lleno</h3>
-                    <div class="space-y-4">
-                        <p class="text-gray-600">
-                            El almacenamiento local del navegador está lleno. Para continuar:
-                        </p>
-                        
-                        <div class="bg-yellow-50 p-3 rounded-lg">
-                            <h4 class="font-medium text-yellow-800 mb-2">Opciones recomendadas:</h4>
-                            <ul class="text-sm text-yellow-700 space-y-1">
-                                <li>• Exporta tu galería como JSON para hacer respaldo</li>
-                                <li>• Elimina algunas imágenes locales grandes</li>
-                                <li>• Usa más imágenes desde Google Drive (URLs)</li>
-                                <li>• Limpia el almacenamiento del navegador</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="bg-blue-50 p-3 rounded-lg">
-                            <p class="text-sm text-blue-700">
-                                <strong>Espacio usado:</strong> ${formatStorageSize(getStorageSize())}<br>
-                                <strong>Imágenes en galería:</strong> ${images.length}<br>
-                                <strong>Desde Drive:</strong> ${images.filter(img => img.isFromDrive).length}
-                            </p>
-                        </div>
-                    </div>
-                    
-                    <div class="flex gap-3 justify-end mt-6">
-                        <button id="clearStorageBtn" 
-                                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
-                            Limpiar Todo
-                        </button>
-                        <button id="exportFirstBtn" 
-                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                            Exportar Primero
-                        </button>
-                        <button id="continueBtn" 
-                                class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
-                            Continuar Así
-                        </button>
-                    </div>
-                `;
-                
-                modal.appendChild(content);
-                document.body.appendChild(modal);
-                
-                content.querySelector('#clearStorageBtn').onclick = () => {
-                    if (confirm('¿Estás seguro? Esto eliminará toda la galería local.')) {
-                        localStorage.removeItem(`gallery_${user.username}`);
-                        setImages([]);
-                        modal.remove();
-                    }
-                };
-                
-                content.querySelector('#exportFirstBtn').onclick = () => {
-                    modal.remove();
-                    exportGallery();
-                };
-                
-                content.querySelector('#continueBtn').onclick = () => {
-                    modal.remove();
-                };
-            };
-
-            // Mostrar advertencia de almacenamiento
-            const showStorageWarning = () => {
-                const notification = document.createElement('div');
-                notification.className = 'fixed top-4 right-4 bg-yellow-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-sm';
-                notification.innerHTML = `
-                    <div class="flex items-start gap-2">
-                        <span class="text-xl">⚠️</span>
-                        <div>
-                            <p class="font-medium">Almacenamiento Casi Lleno</p>
-                            <p class="text-sm opacity-90">Considera exportar tu galería o usar más imágenes desde Drive</p>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(notification);
-                
-                setTimeout(() => {
-                    notification.style.transform = 'translateX(100%)';
-                    setTimeout(() => notification.remove(), 300);
-                }, 5000);
-            };
-
-            // Importar galería desde archivo JSON
-            const importFromJSON = () => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.json';
-                input.onchange = (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                            try {
-                                const jsonData = JSON.parse(event.target.result);
-                                
-                                // Validar estructura del JSON
-                                if (!jsonData.images || !Array.isArray(jsonData.images)) {
-                                    alert('El archivo JSON no tiene la estructura correcta de galería');
-                                    return;
-                                }
-                                
-                                // Mostrar modal de confirmación con detalles
-                                showImportConfirmationModal(jsonData);
-                                
-                            } catch (error) {
-                                console.error('Error parsing JSON:', error);
-                                alert('Error al leer el archivo JSON. Asegúrate de que es un archivo válido.');
-                            }
-                        };
-                        reader.readAsText(file);
-                    }
-                };
-                input.click();
-            };
-
-            // Modal de confirmación para importar JSON
-            const showImportConfirmationModal = (jsonData) => {
-                const modal = document.createElement('div');
-                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-                
-                const content = document.createElement('div');
-                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto';
-                
-                const metadata = jsonData.metadata || {};
-                const importImages = jsonData.images || [];
-                const existingIds = new Set(images.map(img => img.id));
-                const newImages = importImages.filter(img => !existingIds.has(img.id));
-                const duplicates = importImages.filter(img => existingIds.has(img.id));
-                
-                content.innerHTML = `
-                    <h3 class="text-lg font-semibold mb-4">📥 Importar Galería JSON</h3>
-                    
-                    <div class="space-y-4">
-                        <div class="bg-blue-50 p-4 rounded-lg">
-                            <h4 class="font-medium text-blue-800 mb-2">📊 Información de la galería:</h4>
-                            <div class="text-sm text-blue-700 space-y-1">
-                                <p><strong>Nombre:</strong> ${metadata.galleryName || 'Sin nombre'}</p>
-                                <p><strong>Propietario:</strong> ${metadata.owner || 'Desconocido'}</p>
-                                <p><strong>Exportada:</strong> ${metadata.exportDate ? new Date(metadata.exportDate).toLocaleString('es-ES') : 'Fecha desconocida'}</p>
-                                <p><strong>Versión:</strong> ${metadata.version || '1.0'}</p>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="bg-green-50 p-3 rounded-lg">
-                                <h5 class="font-medium text-green-800 mb-1">✅ Nuevas imágenes</h5>
-                                <p class="text-2xl font-bold text-green-600">${newImages.length}</p>
-                                <p class="text-xs text-green-600">Se añadirán a la galería</p>
-                            </div>
-                            
-                            <div class="bg-orange-50 p-3 rounded-lg">
-                                <h5 class="font-medium text-orange-800 mb-1">🔄 Duplicadas</h5>
-                                <p class="text-2xl font-bold text-orange-600">${duplicates.length}</p>
-                                <p class="text-xs text-orange-600">Se omitirán</p>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <h4 class="font-medium text-gray-800 mb-2">🔍 Análisis de contenido:</h4>
-                            <div class="text-sm text-gray-600 space-y-1">
-                                <p>• ${importImages.filter(img => img.isFromDrive).length} imágenes desde Google Drive</p>
-                                <p>• ${importImages.filter(img => img.folderName).length} imágenes con carpeta asignada</p>
-                                <p>• ${importImages.filter(img => img.description).length} imágenes con descripción</p>
-                                <p>• ${importImages.filter(img => img.tags && img.tags.length > 0).length} imágenes con etiquetas</p>
-                                <p>• ${importImages.filter(img => img.isPublic).length} imágenes públicas</p>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-yellow-50 p-3 rounded-lg">
-                            <h5 class="font-medium text-yellow-800 mb-1">⚠️ Importante:</h5>
-                            <p class="text-sm text-yellow-700">
-                                Las imágenes se importarán con sus metadatos originales. Las URLs de Google Drive 
-                                se preservarán, pero algunas imágenes podrían no cargar si los permisos han cambiado.
-                            </p>
-                        </div>
-                        
-                        <div class="space-y-3">
-                            <h4 class="font-medium text-gray-800">🔧 Opciones de importación:</h4>
-                            <div class="space-y-2">
-                                <label class="flex items-center gap-2 text-sm">
-                                    <input type="checkbox" id="preserveMetadata" checked 
-                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    Preservar metadatos completos (carpeta, descripción, etiquetas)
-                                </label>
-                                <label class="flex items-center gap-2 text-sm">
-                                    <input type="checkbox" id="validateImages" checked 
-                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    Validar disponibilidad de imágenes de Drive al importar
-                                </label>
-                                <label class="flex items-center gap-2 text-sm">
-                                    <input type="checkbox" id="updateTimestamps" 
-                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    Actualizar fechas de importación a ahora
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
-                        <button id="cancelImportBtn" 
-                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                            Cancelar
-                        </button>
-                        <button id="confirmImportBtn" 
-                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                            Importar ${newImages.length} Imagen${newImages.length !== 1 ? 'es' : ''}
-                        </button>
-                    </div>
-                `;
-                
-                modal.appendChild(content);
-                document.body.appendChild(modal);
-                
-                const preserveMetadataCheckbox = content.querySelector('#preserveMetadata');
-                const validateImagesCheckbox = content.querySelector('#validateImages');
-                const updateTimestampsCheckbox = content.querySelector('#updateTimestamps');
-                const cancelBtn = content.querySelector('#cancelImportBtn');
-                const confirmBtn = content.querySelector('#confirmImportBtn');
-                
-                cancelBtn.onclick = () => modal.remove();
-                
-                confirmBtn.onclick = async () => {
-                    const preserveMetadata = preserveMetadataCheckbox.checked;
-                    const validateImages = validateImagesCheckbox.checked;
-                    const updateTimestamps = updateTimestampsCheckbox.checked;
-                    
-                    // Cerrar modal de confirmación
-                    modal.remove();
-                    
-                    // Mostrar modal de progreso
-                    const progressModal = document.createElement('div');
-                    progressModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-                    progressModal.innerHTML = `
-                        <div class="bg-white rounded-lg p-6 text-center min-w-[300px]">
-                            <div class="loading-spinner mx-auto mb-4"></div>
-                            <p class="text-gray-600 mb-2">Importando galería...</p>
-                            <p class="text-sm text-gray-500" id="progressText">Procesando imágenes...</p>
-                            <div class="w-full bg-gray-200 rounded-full h-2 mt-4">
-                                <div class="bg-blue-600 h-2 rounded-full transition-all" id="progressBar" style="width: 0%"></div>
-                            </div>
-                        </div>
-                    `;
-                    document.body.appendChild(progressModal);
-                    
-                    const progressText = progressModal.querySelector('#progressText');
-                    const progressBar = progressModal.querySelector('#progressBar');
-                    
-                    try {
-                        const processedImages = [];
-                        
-                        for (let i = 0; i < newImages.length; i++) {
-                            const img = newImages[i];
-                            const progress = ((i + 1) / newImages.length) * 100;
-                            
-                            progressText.textContent = `Procesando ${img.name} (${i + 1}/${newImages.length})`;
-                            progressBar.style.width = `${progress}%`;
-                            
-                            let processedImage = { ...img };
-                            
-                            // Actualizar timestamps si se solicita
-                            if (updateTimestamps) {
-                                processedImage.importedAt = new Date().toISOString();
-                                processedImage.addedToGallery = new Date().toISOString();
-                            }
-                            
-                            // Preservar metadatos si se solicita
-                            if (preserveMetadata) {
-                                // Todos los metadatos ya están en el objeto, no hay que hacer nada extra
-                            } else {
-                                // Limpiar metadatos si no se quieren preservar
-                                delete processedImage.folderName;
-                                delete processedImage.description;
-                                delete processedImage.tags;
-                            }
-                            
-                            // Validar imágenes de Drive si se solicita
-                            if (validateImages && img.isFromDrive && img.src) {
-                                try {
-                                    await new Promise((resolve, reject) => {
-                                        const testImg = new Image();
-                                        testImg.crossOrigin = 'anonymous';
-                                        testImg.onload = resolve;
-                                        testImg.onerror = reject;
-                                        testImg.src = img.src;
-                                        
-                                        // Timeout después de 5 segundos
-                                        setTimeout(reject, 5000);
-                                    });
-                                    
-                                    processedImage.validatedAt = new Date().toISOString();
-                                } catch (error) {
-                                    processedImage.validationFailed = true;
-                                    processedImage.validationError = 'No se pudo cargar la imagen';
-                                }
-                            }
-                            
-                            processedImages.push(processedImage);
-                            
-                            // Pequeña pausa para no bloquear la UI
-                            await new Promise(resolve => setTimeout(resolve, 50));
-                        }
-                        
-                        // Añadir imágenes procesadas a la galería
-                        setImages(prev => [...prev, ...processedImages]);
-                        
-                        // Cerrar modal de progreso
-                        progressModal.remove();
-                        
-                        // Mostrar notificación de éxito
-                        const notification = document.createElement('div');
-                        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all';
-                        notification.innerHTML = `
-                            <div class="flex items-center gap-2">
-                                <span>✅</span>
-                                <div>
-                                    <p class="font-medium">Galería importada correctamente</p>
-                                    <p class="text-sm opacity-90">${processedImages.length} imagen${processedImages.length !== 1 ? 'es' : ''} añadida${processedImages.length !== 1 ? 's' : ''}</p>
-                                </div>
-                            </div>
-                        `;
-                        document.body.appendChild(notification);
-                        
-                        setTimeout(() => {
-                            notification.style.transform = 'translateX(100%)';
-                            setTimeout(() => notification.remove(), 300);
-                        }, 4000);
-                        
-                    } catch (error) {
-                        progressModal.remove();
-                        console.error('Error importando galería:', error);
-                        alert('Error al importar la galería: ' + error.message);
-                    }
-                };
-                
-                // Cerrar modal al hacer clic fuera
-                modal.onclick = (e) => {
-                    if (e.target === modal) modal.remove();
-                };
-            };
-
-            // Cargar imágenes públicas desde el repositorio
-            const loadImagesFromGithub = async () => {
-                try {
-                    const response = await fetch('./imgs/gallery.json');
-                    if (response.ok) {
-                        const publicImages = await response.json();
-                        setImages(prev => {
-                            const existingIds = new Set(prev.map(img => img.id));
-                            const newImages = publicImages.filter(img => !existingIds.has(img.id));
-                            return [...prev, ...newImages.map(img => ({
-                                ...img,
-                                isPublic: true
-                            }))];
-                        });
-                    }
-                } catch (error) {
-                    console.log('No se encontraron imágenes públicas del repositorio');
-                }
-            };
-
-            // Cargar imágenes públicas al iniciar
-            useEffect(() => {
-                if (user) {
-                    loadImagesFromGithub();
-                }
-            }, [user]);
 
             // Funciones de autenticación
             const handleLogin = (e) => {
@@ -704,7 +306,7 @@
                     const userData = {
                         username: loginForm.username.trim(),
                         email: loginForm.email.trim(),
-                        avatar: `https://github.com/${loginForm.username}.png`,
+                        avatar: 'https://github.com/' + loginForm.username + '.png',
                         loginTime: new Date().toISOString()
                     };
                     
@@ -712,7 +314,7 @@
                     localStorage.setItem('photoGalleryUser', JSON.stringify(userData));
                     
                     // Cargar galería del usuario
-                    const userGallery = localStorage.getItem(`gallery_${userData.username}`);
+                    const userGallery = localStorage.getItem('gallery_' + userData.username);
                     if (userGallery) {
                         setImages(JSON.parse(userGallery));
                     } else {
@@ -743,7 +345,7 @@
                 setUser(githubUser);
                 localStorage.setItem('photoGalleryUser', JSON.stringify(githubUser));
                 
-                const userGallery = localStorage.getItem(`gallery_${githubUser.username}`);
+                const userGallery = localStorage.getItem('gallery_' + githubUser.username);
                 if (userGallery) {
                     setImages(JSON.parse(userGallery));
                 } else {
@@ -751,288 +353,6 @@
                 }
                 
                 setShowLogin(false);
-            };
-
-            // Modal para editar detalles de archivo
-            const showEditDetailsModal = (imageData) => {
-                const editModal = document.createElement('div');
-                editModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-                
-                const content = document.createElement('div');
-                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto';
-                
-                content.innerHTML = `
-                    <h3 class="text-lg font-semibold mb-4">✏️ Editar Detalles del Archivo</h3>
-                    <div class="flex gap-4 mb-4">
-                        <img src="${imageData.src}" alt="Preview" 
-                             class="w-20 h-20 object-cover rounded-lg border border-gray-200">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm text-gray-600 mb-1">Archivo actual:</p>
-                            <p class="text-sm font-medium text-gray-800 truncate">${imageData.name}</p>
-                            <p class="text-xs text-gray-500">${imageData.size ? Math.round(imageData.size / 1024) + ' KB' : 'Tamaño desconocido'}</p>
-                            ${imageData.isFromDrive ? '<p class="text-xs text-green-600">📁 Desde Google Drive</p>' : '<p class="text-xs text-blue-600">💻 Archivo local</p>'}
-                        </div>
-                    </div>
-                    
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Nombre del archivo *
-                            </label>
-                            <input type="text" id="editFileName" value="${imageData.name}" 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-500 mt-1">Incluye la extensión (.jpg, .png, etc.)</p>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Carpeta origen ${imageData.isFromDrive ? '(Google Drive)' : '(organización)'}
-                            </label>
-                            <input type="text" id="editFolderName" value="${imageData.folderName || ''}" 
-                                   placeholder="Ej: Vacaciones 2024, Trabajo, Eventos, etc." 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Descripción
-                            </label>
-                            <textarea id="editDescription" placeholder="Describe la imagen, el contexto, la ocasión..." 
-                                      rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">${imageData.description || ''}</textarea>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Etiquetas (separadas por comas)
-                            </label>
-                            <input type="text" id="editTags" value="${imageData.tags ? imageData.tags.join(', ') : ''}" 
-                                   placeholder="paisaje, familia, trabajo, evento, etc." 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <p class="text-xs text-gray-500 mt-1">Usa comas para separar múltiples etiquetas</p>
-                        </div>
-                        
-                        ${imageData.isFromDrive ? `
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">
-                                    Enlace de Google Drive
-                                </label>
-                                <input type="url" id="editDriveUrl" value="${imageData.driveUrl || ''}" 
-                                       placeholder="https://drive.google.com/file/d/..." 
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <p class="text-xs text-gray-500 mt-1">URL original del archivo en Google Drive</p>
-                            </div>
-                        ` : ''}
-                        
-                        <div class="bg-gray-50 p-3 rounded-lg">
-                            <h4 class="text-sm font-medium text-gray-700 mb-2">🔧 Acciones adicionales:</h4>
-                            <div class="flex gap-2 flex-wrap">
-                                <label class="flex items-center gap-2 text-sm">
-                                    <input type="checkbox" id="markAsPublic" ${imageData.isPublic ? 'checked' : ''} 
-                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    Marcar como público
-                                </label>
-                                <label class="flex items-center gap-2 text-sm">
-                                    <input type="checkbox" id="updateTimestamp" 
-                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                    Actualizar fecha de modificación
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
-                        <button id="cancelEditBtn" 
-                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                            Cancelar
-                        </button>
-                        <button id="resetBtn" 
-                                class="px-4 py-2 text-orange-600 border border-orange-300 rounded-lg hover:bg-orange-50 transition-colors">
-                            Restablecer
-                        </button>
-                        <button id="saveEditBtn" 
-                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                            Guardar Cambios
-                        </button>
-                    </div>
-                `;
-                
-                editModal.appendChild(content);
-                document.body.appendChild(editModal);
-                
-                const fileNameInput = content.querySelector('#editFileName');
-                const folderNameInput = content.querySelector('#editFolderName');
-                const descriptionInput = content.querySelector('#editDescription');
-                const tagsInput = content.querySelector('#editTags');
-                const driveUrlInput = content.querySelector('#editDriveUrl');
-                const publicCheckbox = content.querySelector('#markAsPublic');
-                const timestampCheckbox = content.querySelector('#updateTimestamp');
-                const cancelBtn = content.querySelector('#cancelEditBtn');
-                const resetBtn = content.querySelector('#resetBtn');
-                const saveBtn = content.querySelector('#saveEditBtn');
-                
-                // Función para restablecer valores originales
-                const resetForm = () => {
-                    fileNameInput.value = imageData.name;
-                    folderNameInput.value = imageData.folderName || '';
-                    descriptionInput.value = imageData.description || '';
-                    tagsInput.value = imageData.tags ? imageData.tags.join(', ') : '';
-                    if (driveUrlInput) driveUrlInput.value = imageData.driveUrl || '';
-                    publicCheckbox.checked = imageData.isPublic || false;
-                    timestampCheckbox.checked = false;
-                };
-                
-                cancelBtn.onclick = () => editModal.remove();
-                resetBtn.onclick = resetForm;
-                
-                saveBtn.onclick = () => {
-                    const newFileName = fileNameInput.value.trim();
-                    if (!newFileName) {
-                        alert('El nombre del archivo es obligatorio');
-                        fileNameInput.focus();
-                        return;
-                    }
-                    
-                    const folderName = folderNameInput.value.trim();
-                    const description = descriptionInput.value.trim();
-                    const tags = tagsInput.value.trim().split(',').map(tag => tag.trim()).filter(tag => tag);
-                    const driveUrl = driveUrlInput ? driveUrlInput.value.trim() : imageData.driveUrl;
-                    const isPublic = publicCheckbox.checked;
-                    const updateTimestamp = timestampCheckbox.checked;
-                    
-                    // Crear objeto con los cambios
-                    const updatedData = {
-                        ...imageData,
-                        name: newFileName,
-                        folderName: folderName || null,
-                        description: description || null,
-                        tags: tags.length > 0 ? tags : null,
-                        isPublic: isPublic,
-                        lastModified: updateTimestamp ? new Date().toISOString() : imageData.lastModified
-                    };
-                    
-                    if (imageData.isFromDrive && driveUrl) {
-                        updatedData.driveUrl = driveUrl;
-                    }
-                    
-                    // Actualizar la imagen en el estado
-                    setImages(prev => prev.map(img => 
-                        img.id === imageData.id ? updatedData : img
-                    ));
-                    
-                    // Si la imagen está seleccionada en el modal, actualizarla también
-                    if (selectedImage && selectedImage.id === imageData.id) {
-                        setSelectedImage(updatedData);
-                    }
-                    
-                    editModal.remove();
-                    
-                    // Mostrar confirmación
-                    const notification = document.createElement('div');
-                    notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all';
-                    notification.innerHTML = '✅ Detalles actualizados correctamente';
-                    document.body.appendChild(notification);
-                    
-                    setTimeout(() => {
-                        notification.style.transform = 'translateX(100%)';
-                        setTimeout(() => notification.remove(), 300);
-                    }, 2000);
-                };
-                
-                // Cerrar modal al hacer clic fuera
-                editModal.onclick = (e) => {
-                    if (e.target === editModal) editModal.remove();
-                };
-                
-                // Enfocar primer campo
-                fileNameInput.focus();
-                fileNameInput.select();
-            };
-
-            // Modal para metadatos adicionales de Drive
-            const showDriveMetadataModal = (imageData) => {
-                const metaModal = document.createElement('div');
-                metaModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-                
-                const content = document.createElement('div');
-                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
-                
-                content.innerHTML = `
-                    <h3 class="text-lg font-semibold mb-4">📁 Información Adicional</h3>
-                    <p class="text-gray-600 mb-4">Añade información adicional sobre esta imagen de Drive:</p>
-                    
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Nombre de carpeta origen (opcional)
-                            </label>
-                            <input type="text" id="folderName" placeholder="Ej: Vacaciones 2024, Trabajo, etc." 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Descripción (opcional)
-                            </label>
-                            <textarea id="description" placeholder="Describe la imagen o el contexto..." 
-                                      rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Etiquetas (separadas por comas)
-                            </label>
-                            <input type="text" id="tags" placeholder="paisaje, familia, trabajo, etc." 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                    </div>
-                    
-                    <div class="flex gap-3 justify-end mt-6">
-                        <button id="skipBtn" 
-                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                            Omitir
-                        </button>
-                        <button id="saveBtn" 
-                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                            Guardar Info
-                        </button>
-                    </div>
-                `;
-                
-                metaModal.appendChild(content);
-                document.body.appendChild(metaModal);
-                
-                const folderInput = content.querySelector('#folderName');
-                const descriptionInput = content.querySelector('#description');
-                const tagsInput = content.querySelector('#tags');
-                const skipBtn = content.querySelector('#skipBtn');
-                const saveBtn = content.querySelector('#saveBtn');
-                
-                skipBtn.onclick = () => metaModal.remove();
-                
-                saveBtn.onclick = () => {
-                    const folderName = folderInput.value.trim();
-                    const description = descriptionInput.value.trim();
-                    const tags = tagsInput.value.trim().split(',').map(tag => tag.trim()).filter(tag => tag);
-                    
-                    // Actualizar la imagen con los metadatos
-                    setImages(prev => prev.map(img => 
-                        img.id === imageData.id ? {
-                            ...img,
-                            folderName: folderName || null,
-                            description: description || null,
-                            tags: tags.length > 0 ? tags : null
-                        } : img
-                    ));
-                    
-                    metaModal.remove();
-                };
-                
-                // Cerrar modal al hacer clic fuera
-                metaModal.onclick = (e) => {
-                    if (e.target === metaModal) metaModal.remove();
-                };
-                
-                folderInput.focus();
             };
 
             // Importar desde Google Drive
@@ -1043,29 +363,7 @@
                 const content = document.createElement('div');
                 content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
                 
-                content.innerHTML = `
-                    <h3 class="text-lg font-semibold mb-4">Importar desde Google Drive</h3>
-                    <p class="text-gray-600 mb-4">Pega el enlace público de tu imagen de Google Drive:</p>
-                    <input type="url" id="driveUrl" placeholder="https://drive.google.com/file/d/..." 
-                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
-                    <div class="text-xs text-gray-500 mb-4">
-                        <strong>📋 Instrucciones:</strong><br>
-                        1. Haz clic derecho en tu imagen en Google Drive<br>
-                        2. Selecciona "Obtener enlace"<br>
-                        3. Cambia los permisos a "Cualquier persona con el enlace"<br>
-                        4. Copia y pega el enlace aquí
-                    </div>
-                    <div class="flex gap-3 justify-end">
-                        <button id="cancelBtn" 
-                                class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                            Cancelar
-                        </button>
-                        <button id="importBtn" 
-                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                            Importar
-                        </button>
-                    </div>
-                `;
+                content.innerHTML = '<h3 class="text-lg font-semibold mb-4">Importar desde Google Drive</h3><p class="text-gray-600 mb-4">Pega el enlace público de tu imagen de Google Drive:</p><input type="url" id="driveUrl" placeholder="https://drive.google.com/file/d/..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"><div class="text-xs text-gray-500 mb-4"><strong>📋 Instrucciones:</strong><br>1. Haz clic derecho en tu imagen en Google Drive<br>2. Selecciona "Obtener enlace"<br>3. Cambia los permisos a "Cualquier persona con el enlace"<br>4. Copia y pega el enlace aquí</div><div class="flex gap-3 justify-end"><button id="cancelBtn" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Cancelar</button><button id="importBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">Importar</button></div>';
                 
                 modal.appendChild(content);
                 document.body.appendChild(modal);
@@ -1079,77 +377,40 @@
                 importBtn.onclick = () => {
                     const url = urlInput.value.trim();
                     if (url) {
-                        // Limpiar URL eliminando parámetros innecesarios como view?usp=sharing
                         const cleanUrl = url.replace(/[?&]usp=sharing/g, '').replace(/[?&]view/g, '');
-                        
-                        // Convertir enlace de Google Drive a enlace directo con múltiples formatos
                         const fileId = cleanUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
                         if (fileId) {
-                            // Intentar diferentes formatos de URL de Google Drive
-                            const directUrls = [
-                                `https://drive.google.com/uc?export=view&id=${fileId[1]}`,
-                                `https://drive.google.com/uc?id=${fileId[1]}&export=download`,
-                                `https://lh3.googleusercontent.com/d/${fileId[1]}`,
-                                `https://drive.google.com/thumbnail?id=${fileId[1]}&sz=w1000`
-                            ];
+                            const directUrl = 'https://drive.google.com/uc?export=view&id=' + fileId[1];
+                            const filename = 'Imagen-Drive-' + Date.now();
                             
-                            const filename = url.match(/[^/]+(?=\?|$)/) ? 
-                                url.match(/[^/]+(?=\?|$)/)[0] : 
-                                `Imagen-Drive-${Date.now()}`;
-                            
-                            // Probar qué URL funciona
-                            let urlIndex = 0;
-                            const testUrl = () => {
-                                if (urlIndex >= directUrls.length) {
-                                    alert('No se pudo cargar la imagen desde Google Drive. Asegúrate de que:\n1. El enlace es público\n2. Los permisos están configurados como "Cualquier persona con el enlace puede ver"\n3. La imagen está disponible públicamente');
-                                    return;
-                                }
-                                
-                                const testImg = new Image();
-                                testImg.crossOrigin = 'anonymous';
-                                
-                                testImg.onload = () => {
-                                    // Esta URL funciona, preguntar por información adicional
-                                    const newImage = {
-                                        id: Date.now() + Math.random(),
-                                        src: directUrls[urlIndex],
-                                        name: filename,
-                                        size: 0,
-                                        isFromDrive: true,
-                                        driveUrl: cleanUrl,
-                                        driveFileId: fileId[1],
-                                        folderName: null,
-                                        description: null,
-                                        uploadDate: new Date().toISOString()
-                                    };
-                                    
-                                    // Mostrar modal para información adicional
-                                    setTimeout(() => {
-                                        showDriveMetadataModal(newImage);
-                                    }, 100);
-                                    
-                                    setImages(prev => [...prev, newImage]);
-                                    modal.remove();
+                            const testImg = new Image();
+                            testImg.onload = () => {
+                                const newImage = {
+                                    id: Date.now() + Math.random(),
+                                    src: directUrl,
+                                    name: filename,
+                                    size: 0,
+                                    isFromDrive: true,
+                                    driveUrl: cleanUrl,
+                                    driveFileId: fileId[1],
+                                    uploadDate: new Date().toISOString()
                                 };
                                 
-                                testImg.onerror = () => {
-                                    // Esta URL no funciona, probar la siguiente
-                                    urlIndex++;
-                                    testUrl();
-                                };
-                                
-                                testImg.src = directUrls[urlIndex];
+                                setImages(prev => [...prev, newImage]);
+                                modal.remove();
                             };
                             
-                            testUrl();
+                            testImg.onerror = () => {
+                                alert('No se pudo cargar la imagen desde Google Drive. Asegúrate de que el enlace es público.');
+                            };
+                            
+                            testImg.src = directUrl;
                         } else {
                             alert('Por favor, introduce un enlace válido de Google Drive');
-                            return;
                         }
                     }
                 };
                 
-                // Cerrar modal al hacer clic fuera
                 modal.onclick = (e) => {
                     if (e.target === modal) modal.remove();
                 };
@@ -1161,34 +422,15 @@
             const exportGallery = () => {
                 const galleryData = {
                     metadata: {
-                        galleryName: `Galería de Gema Pinedo de Pedro`,
+                        galleryName: 'Galería de Gema Pinedo de Pedro',
                         owner: user.username,
                         ownerEmail: user.email,
                         exportDate: new Date().toISOString(),
                         totalImages: images.length,
                         driveImages: images.filter(img => img.isFromDrive).length,
-                        publicImages: images.filter(img => img.isPublic).length,
                         version: "2.0"
                     },
-                    images: images.map(img => ({
-                        id: img.id,
-                        src: img.src,
-                        name: img.name,
-                        size: img.size,
-                        isFromDrive: img.isFromDrive || false,
-                        isPublic: img.isPublic || false,
-                        // Metadatos de Google Drive
-                        driveUrl: img.driveUrl || null,
-                        driveFileId: img.driveFileId || null,
-                        folderName: img.folderName || null,
-                        // Metadatos adicionales
-                        description: img.description || null,
-                        tags: img.tags || null,
-                        uploadDate: img.uploadDate || null,
-                        // Metadatos técnicos
-                        format: img.name ? img.name.split('.').pop()?.toLowerCase() : null,
-                        addedToGallery: img.addedToGallery || new Date().toISOString()
-                    }))
+                    images: images
                 };
                 
                 const dataStr = JSON.stringify(galleryData, null, 2);
@@ -1196,501 +438,40 @@
                 
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(dataBlob);
-                link.download = `galeria-${user.username}-${new Date().toISOString().split('T')[0]}.json`;
+                link.download = 'galeria-' + user.username + '-' + new Date().toISOString().split('T')[0] + '.json';
                 link.click();
             };
 
-            // Convertir imagen a base64
-            const convertToBase64 = (imgSrc) => {
-                return new Promise((resolve, reject) => {
-                    if (imgSrc.startsWith('data:')) {
-                        // Ya es base64
-                        resolve(imgSrc);
-                    } else {
-                        // Convertir URL a base64
-                        const img = new Image();
-                        img.crossOrigin = 'anonymous';
-                        img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0);
-                            resolve(canvas.toDataURL('image/jpeg', 0.8));
-                        };
-                        img.onerror = () => reject(new Error('Error cargando imagen'));
-                        img.src = imgSrc;
-                    }
-                });
-            };
-
-            // Compartir galería como HTML embebido
+            // Compartir galería como HTML (simplificado para evitar errores de template literal)
             const shareAsHTML = async () => {
                 if (images.length === 0) {
                     alert('No hay imágenes para compartir');
                     return;
                 }
 
-                // Mostrar modal de carga
-                const loadingModal = document.createElement('div');
-                loadingModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-                loadingModal.innerHTML = `
-                    <div class="bg-white rounded-lg p-6 text-center">
-                        <div class="loading-spinner mx-auto mb-4"></div>
-                        <p class="text-gray-600">Generando HTML con imágenes embebidas...</p>
-                        <p class="text-sm text-gray-500 mt-2">Esto puede tomar un momento</p>
-                    </div>
-                `;
-                document.body.appendChild(loadingModal);
-
                 try {
-                    // Convertir todas las imágenes a base64
-                    const embeddedImages = [];
-                    for (let i = 0; i < images.length; i++) {
-                        const img = images[i];
-                        try {
-                            const base64 = await convertToBase64(img.src);
-                            embeddedImages.push({
-                                ...img,
-                                embeddedSrc: base64
-                            });
-                        } catch (error) {
-                            console.error(`Error convirtiendo imagen ${img.name}:`, error);
-                            // Usar placeholder si falla
-                            embeddedImages.push({
-                                ...img,
-                                embeddedSrc: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDMwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xNTAgNTBMMjAwIDEwMEgxNTBIMTUwVjE1MEgxMDBWMTAwSDEwMEwxNTAgNTBaIiBmaWxsPSIjOUNBM0FGIi8+Cjx0ZXh0IHg9IjE1MCIgeT0iMTgwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM2QjcyODQiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkltYWdlbiBubyBkaXNwb25pYmxlPC90ZXh0Pgo8L3N2Zz4=',
-                                failed: true
-                            });
-                        }
-                    }
+                    // Generar HTML simplificado sin template literals complejos
+                    const imageCardsHTML = images.map((img, index) => {
+                        return '<div class="image-card"><img src="' + img.src + '" alt="' + img.name + '" loading="lazy"><div class="image-info"><h3>' + img.name + '</h3><p>Tamaño: ' + (img.size ? Math.round(img.size / 1024) + ' KB' : 'Desconocido') + '</p></div></div>';
+                    }).join('');
 
-                    // Generar HTML
-                    const htmlContent = `<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galería de Gema Pinedo de Pedro</title>
-    <meta name="description" content="Galería fotográfica compartida">
-    <meta name="author" content="${user.username}">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            padding: 30px;
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #667eea;
-        }
-        
-        .header h1 {
-            color: #333;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .header .info {
-            color: #666;
-            font-size: 1.1em;
-        }
-        
-        .stats {
-            display: flex;
-            justify-content: center;
-            gap: 40px;
-            margin: 20px 0;
-            flex-wrap: wrap;
-        }
-        
-        .stat {
-            text-align: center;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            min-width: 120px;
-        }
-        
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            color: #667eea;
-        }
-        
-        .stat-label {
-            color: #666;
-            font-size: 0.9em;
-        }
-        
-        .gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 25px;
-            margin-top: 30px;
-        }
-        
-        .image-card {
-            background: white;
-            border-radius: 15px;
-            overflow: hidden;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        
-        .image-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
-        }
-        
-        .image-container {
-            position: relative;
-            width: 100%;
-            height: 250px;
-            overflow: hidden;
-        }
-        
-        .image-card img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.3s ease;
-        }
-        
-        .image-card:hover img {
-            transform: scale(1.05);
-        }
-        
-        .image-overlay {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            display: flex;
-            gap: 5px;
-        }
-        
-        .badge {
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 0.8em;
-            font-weight: bold;
-            backdrop-filter: blur(10px);
-        }
-        
-        .badge.drive {
-            background: rgba(34, 197, 94, 0.9);
-            color: white;
-        }
-        
-        .badge.public {
-            background: rgba(59, 130, 246, 0.9);
-            color: white;
-        }
-        
-        .badge.failed {
-            background: rgba(239, 68, 68, 0.9);
-            color: white;
-        }
-        
-        .image-info {
-            padding: 20px;
-        }
-        
-        .image-name {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-            word-break: break-word;
-        }
-        
-        .image-details {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            font-size: 0.9em;
-            color: #666;
-        }
-        
-        .detail-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .detail-icon {
-            width: 16px;
-            height: 16px;
-            opacity: 0.7;
-        }
-        
-        .footer {
-            text-align: center;
-            margin-top: 50px;
-            padding-top: 30px;
-            border-top: 2px solid #f0f0f0;
-            color: #666;
-        }
-        
-        .footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        
+                    const htmlContent = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Galería de Gema Pinedo de Pedro</title><style>body{font-family:Arial,sans-serif;background:#f5f5f5;padding:20px}.container{max-width:1200px;margin:0 auto;background:white;border-radius:10px;padding:30px}.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}.image-card{background:white;border-radius:10px;overflow:hidden;box-shadow:0 5px 15px rgba(0,0,0,0.1)}.image-card img{width:100%;height:200px;object-fit:cover}.image-info{padding:15px}</style></head><body><div class="container"><h1>Galería de Gema Pinedo de Pedro</h1><div class="gallery">' + imageCardsHTML + '</div></div></body></html>';
 
-        
-        @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-                margin: 10px;
-            }
-            
-            .gallery {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-            
-            .stats {
-                gap: 20px;
-            }
-            
-            .stat {
-                min-width: 100px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📸 Galería de Gema Pinedo de Pedro</h1>
-            <div class="info">
-                <p>Galería fotográfica compartida</p>
-                <p>Generada el ${new Date().toLocaleDateString('es-ES', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                })}</p>
-            </div>
-            
-            <div class="stats">
-                <div class="stat">
-                    <div class="stat-number">${embeddedImages.length}</div>
-                    <div class="stat-label">Imágenes</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">${embeddedImages.filter(img => img.isFromDrive).length}</div>
-                    <div class="stat-label">Desde Drive</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">${embeddedImages.filter(img => img.isPublic).length}</div>
-                    <div class="stat-label">Públicas</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">${Math.round(embeddedImages.reduce((acc, img) => acc + (img.size || 0), 0) / 1024 / 1024 * 100) / 100}</div>
-                    <div class="stat-label">MB Total</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="gallery">
-            ${embeddedImages.map((img, index) => `
-                <div class="image-card">
-                    <div class="image-container">
-                        <img src="${img.embeddedSrc}" alt="${img.name}" loading="lazy">
-                        <div class="image-overlay">
-                            ${img.isFromDrive ? '<span class="badge drive">📁 Drive</span>' : ''}
-                            ${img.isPublic ? '<span class="badge public">🌐 Público</span>' : ''}
-                            ${img.failed ? '<span class="badge failed">❌ Error</span>' : ''}
-                        </div>
-                    </div>
-                    <div class="image-info">
-                        <div class="image-name">${img.name}</div>
-                        <div class="image-details">
-                            <div class="detail-item">
-                                <span class="detail-icon">📏</span>
-                                <span>${img.size ? Math.round(img.size / 1024) + ' KB' : 'Tamaño desconocido'}</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-icon">🔢</span>
-                                <span>Imagen #${index + 1}</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-icon">🗂️</span>
-                                <span>${img.isFromDrive ? 'Google Drive' : 'Local'}</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-icon">🌐</span>
-                                <span>${img.isPublic ? 'Público' : 'Privado'}</span>
-                            </div>
-                            ${img.folderName ? `
-                                <div class="detail-item" style="grid-column: 1 / -1;">
-                                    <span class="detail-icon">📁</span>
-                                    <span><strong>Carpeta:</strong> ${img.folderName}</span>
-                                </div>
-                            ` : ''}
-                            ${img.description ? `
-                                <div class="detail-item" style="grid-column: 1 / -1;">
-                                    <span class="detail-icon">📝</span>
-                                    <span><strong>Descripción:</strong> ${img.description}</span>
-                                </div>
-                            ` : ''}
-                            ${img.tags && img.tags.length > 0 ? `
-                                <div class="detail-item" style="grid-column: 1 / -1;">
-                                    <span class="detail-icon">🏷️</span>
-                                    <span><strong>Etiquetas:</strong> ${img.tags.join(', ')}</span>
-                                </div>
-                            ` : ''}
-                        </div>
-
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-        
-
-        
-        <div class="footer">
-            <p>Galería generada con ❤️ por <strong>Gema Pinedo de Pedro</strong></p>
-            <p>Creada el ${new Date().toLocaleString('es-ES')}</p>
-            <p><a href="mailto:${user.email}">Contactar</a></p>
-        </div>
-    </div>
-</body>
-</html>`;
-
-                    // Cerrar modal de carga
-                    loadingModal.remove();
-
-                    // Mostrar modal de resultado
-                    const resultModal = document.createElement('div');
-                    resultModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-                    
-                    const content = document.createElement('div');
-                    content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto';
-                    
-                    content.innerHTML = `
-                        <h3 class="text-xl font-bold mb-4">📤 Compartir Galería HTML</h3>
-                        <p class="text-gray-600 mb-4">
-                            HTML generado con ${embeddedImages.length} imágenes embebidas y metadatos completos
-                        </p>
-                        
-                        <div class="bg-gray-50 p-4 rounded-lg mb-4">
-                            <p class="text-sm text-gray-700 mb-2">
-                                <strong>Estadísticas:</strong>
-                            </p>
-                            <ul class="text-sm text-gray-600 space-y-1">
-                                <li>• ${embeddedImages.filter(img => !img.failed).length} imágenes embebidas correctamente</li>
-                                <li>• ${embeddedImages.filter(img => img.failed).length} imágenes con errores (placeholder incluido)</li>
-                                <li>• ${embeddedImages.filter(img => img.isFromDrive).length} imágenes desde Google Drive</li>
-                                <li>• Tamaño aproximado: ${Math.round(htmlContent.length / 1024)} KB</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="flex gap-3 flex-wrap">
-                            <button id="copyBtn" 
-                                    class="flex-1 min-w-[120px] px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                                📋 Copiar HTML
-                            </button>
-                            <button id="downloadBtn" 
-                                    class="flex-1 min-w-[120px] px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                                💾 Descargar HTML
-                            </button>
-                            <button id="previewBtn" 
-                                    class="flex-1 min-w-[120px] px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
-                                👁️ Vista Previa
-                            </button>
-                        </div>
-                        
-                        <div class="flex justify-end mt-4">
-                            <button id="closeBtn" 
-                                    class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                                Cerrar
-                            </button>
-                        </div>
-                    `;
-                    
-                    resultModal.appendChild(content);
-                    document.body.appendChild(resultModal);
-                    
-                    // Eventos de botones
-                    content.querySelector('#copyBtn').onclick = async () => {
-                        try {
-                            await navigator.clipboard.writeText(htmlContent);
-                            alert('HTML copiado al portapapeles');
-                        } catch (error) {
-                            // Fallback para navegadores sin clipboard API
-                            const textarea = document.createElement('textarea');
-                            textarea.value = htmlContent;
-                            document.body.appendChild(textarea);
-                            textarea.select();
-                            document.execCommand('copy');
-                            document.body.removeChild(textarea);
-                            alert('HTML copiado al portapapeles');
-                        }
-                    };
-                    
-                    content.querySelector('#downloadBtn').onclick = () => {
-                        const blob = new Blob([htmlContent], { type: 'text/html' });
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `galeria-gema-pinedo-${new Date().toISOString().split('T')[0]}.html`;
-                        link.click();
-                        URL.revokeObjectURL(url);
-                    };
-                    
-                    content.querySelector('#previewBtn').onclick = () => {
-                        const previewWindow = window.open('', '_blank');
-                        previewWindow.document.write(htmlContent);
-                        previewWindow.document.close();
-                    };
-                    
-                    content.querySelector('#closeBtn').onclick = () => {
-                        resultModal.remove();
-                    };
-                    
-                    // Cerrar modal al hacer clic fuera
-                    resultModal.onclick = (e) => {
-                        if (e.target === resultModal) resultModal.remove();
-                    };
+                    const blob = new Blob([htmlContent], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'galeria-gema-pinedo-' + new Date().toISOString().split('T')[0] + '.html';
+                    link.click();
+                    URL.revokeObjectURL(url);
 
                 } catch (error) {
-                    loadingModal.remove();
                     console.error('Error generando HTML:', error);
                     alert('Error al generar el HTML compartible');
                 }
             };
 
-            // Manejar archivos arrastrados con límite de tamaño
+            // Manejar archivos arrastrados
             const handleDrop = useCallback((e) => {
                 e.preventDefault();
                 setIsDragging(false);
@@ -1698,84 +479,21 @@
                 const files = Array.from(e.dataTransfer.files);
                 const imageFiles = files.filter(file => file.type.startsWith('image/'));
                 
-                // Verificar tamaño total de archivos
-                const totalSize = imageFiles.reduce((acc, file) => acc + file.size, 0);
-                const maxSizePerFile = 2 * 1024 * 1024; // 2MB por archivo
-                const maxTotalSize = 10 * 1024 * 1024; // 10MB total
-                
-                const largeFiles = imageFiles.filter(file => file.size > maxSizePerFile);
-                
-                if (largeFiles.length > 0) {
-                    const modal = document.createElement('div');
-                    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
-                    
-                    const content = document.createElement('div');
-                    content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
-                    
-                    content.innerHTML = `
-                        <h3 class="text-lg font-semibold mb-4 text-orange-600">📦 Archivos Grandes Detectados</h3>
-                        <div class="space-y-4">
-                            <p class="text-gray-600">
-                                Algunos archivos son mayores a 2MB. Esto puede causar problemas de almacenamiento.
-                            </p>
-                            
-                            <div class="bg-gray-50 p-3 rounded-lg max-h-32 overflow-y-auto">
-                                <h4 class="font-medium text-gray-800 mb-2">Archivos grandes:</h4>
-                                ${largeFiles.map(file => `
-                                    <p class="text-sm text-gray-600">• ${file.name} (${formatFileSize(file.size)})</p>
-                                `).join('')}
-                            </div>
-                            
-                            <div class="bg-blue-50 p-3 rounded-lg">
-                                <h4 class="font-medium text-blue-800 mb-1">💡 Recomendación:</h4>
-                                <p class="text-sm text-blue-700">
-                                    Sube estos archivos a Google Drive y usa "Importar desde Drive" para mejores resultados.
-                                </p>
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-3 justify-end mt-6">
-                            <button id="cancelUploadBtn" 
-                                    class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                                Cancelar
-                            </button>
-                            <button id="uploadAnywayBtn" 
-                                    class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
-                                Subir de Todas Formas
-                            </button>
-                        </div>
-                    `;
-                    
-                    modal.appendChild(content);
-                    document.body.appendChild(modal);
-                    
-                    content.querySelector('#cancelUploadBtn').onclick = () => modal.remove();
-                    content.querySelector('#uploadAnywayBtn').onclick = () => {
-                        modal.remove();
-                        processFiles(imageFiles);
-                    };
-                } else {
-                    processFiles(imageFiles);
-                }
-                
-                function processFiles(files) {
-                    files.forEach(file => {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                            const newImage = {
-                                id: Date.now() + Math.random(),
-                                src: event.target.result,
-                                name: file.name,
-                                size: file.size,
-                                isFromDrive: false,
-                                uploadDate: new Date().toISOString(),
-                                addedToGallery: new Date().toISOString()
-                            };
-                            setImages(prev => [...prev, newImage]);
+                imageFiles.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const newImage = {
+                            id: Date.now() + Math.random(),
+                            src: event.target.result,
+                            name: file.name,
+                            size: file.size,
+                            isFromDrive: false,
+                            uploadDate: new Date().toISOString()
                         };
-                        reader.readAsDataURL(file);
-                    });
-                }
+                        setImages(prev => [...prev, newImage]);
+                    };
+                    reader.readAsDataURL(file);
+                });
             }, []);
 
             const handleDragOver = (e) => {
@@ -1788,62 +506,27 @@
                 setIsDragging(false);
             };
 
-            // Manejar selección de archivos con límites
+            // Manejar selección de archivos
             const handleFileSelect = (e) => {
                 const files = Array.from(e.target.files);
-                const maxSizePerFile = 2 * 1024 * 1024; // 2MB por archivo
-                const largeFiles = files.filter(file => file.size > maxSizePerFile);
                 
-                if (largeFiles.length > 0) {
-                    if (confirm(`${largeFiles.length} archivo(s) son mayores a 2MB. Esto puede causar problemas de almacenamiento. ¿Continuar de todas formas?\n\nRecomendación: Usa Google Drive para archivos grandes.`)) {
-                        processSelectedFiles(files);
-                    }
-                } else {
-                    processSelectedFiles(files);
-                }
-                
-                function processSelectedFiles(filesToProcess) {
-                    filesToProcess.forEach(file => {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                            const newImage = {
-                                id: Date.now() + Math.random(),
-                                src: event.target.result,
-                                name: file.name,
-                                size: file.size,
-                                isFromDrive: false,
-                                uploadDate: new Date().toISOString(),
-                                addedToGallery: new Date().toISOString()
-                            };
-                            setImages(prev => [...prev, newImage]);
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const newImage = {
+                            id: Date.now() + Math.random(),
+                            src: event.target.result,
+                            name: file.name,
+                            size: file.size,
+                            isFromDrive: false,
+                            uploadDate: new Date().toISOString()
                         };
-                        reader.readAsDataURL(file);
-                    });
-                }
+                        setImages(prev => [...prev, newImage]);
+                    };
+                    reader.readAsDataURL(file);
+                });
                 
-                e.target.value = ''; // Reset input
-            };
-
-            // Reordenar imágenes
-            const handleImageDragStart = (e, index) => {
-                setDraggedIndex(index);
-                e.dataTransfer.effectAllowed = 'move';
-            };
-
-            const handleImageDragOver = (e, index) => {
-                e.preventDefault();
-                if (draggedIndex !== null && draggedIndex !== index) {
-                    const newImages = [...images];
-                    const draggedImage = newImages[draggedIndex];
-                    newImages.splice(draggedIndex, 1);
-                    newImages.splice(index, 0, draggedImage);
-                    setImages(newImages);
-                    setDraggedIndex(index);
-                }
-            };
-
-            const handleImageDragEnd = () => {
-                setDraggedIndex(null);
+                e.target.value = '';
             };
 
             // Eliminar imagen
@@ -1853,75 +536,6 @@
                     setSelectedImage(null);
                 }
             };
-
-            // Navegación en el modal
-            const getCurrentImageIndex = () => {
-                return images.findIndex(img => img.id === selectedImage?.id);
-            };
-
-            const goToPreviousImage = () => {
-                const currentIndex = getCurrentImageIndex();
-                if (currentIndex > 0) {
-                    setSelectedImage(images[currentIndex - 1]);
-                }
-            };
-
-            const goToNextImage = () => {
-                const currentIndex = getCurrentImageIndex();
-                if (currentIndex < images.length - 1) {
-                    setSelectedImage(images[currentIndex + 1]);
-                }
-            };
-
-            // Descargar imagen
-            const downloadImage = async () => {
-                if (!selectedImage) return;
-                
-                try {
-                    const response = await fetch(selectedImage.src);
-                    const blob = await response.blob();
-                    
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(blob);
-                    link.download = selectedImage.name || `imagen-${Date.now()}.jpg`;
-                    link.click();
-                    
-                    URL.revokeObjectURL(link.href);
-                } catch (error) {
-                    console.error('Error descargando la imagen:', error);
-                    alert('No se pudo descargar la imagen');
-                }
-            };
-
-            // Navegación con teclado
-            useEffect(() => {
-                const handleKeyDown = (e) => {
-                    if (selectedImage) {
-                        switch (e.key) {
-                            case 'ArrowLeft':
-                                e.preventDefault();
-                                goToPreviousImage();
-                                break;
-                            case 'ArrowRight':
-                                e.preventDefault();
-                                goToNextImage();
-                                break;
-                            case 'Escape':
-                                e.preventDefault();
-                                setSelectedImage(null);
-                                setIsZoomed(false);
-                                break;
-                            case ' ':
-                                e.preventDefault();
-                                setIsZoomed(!isZoomed);
-                                break;
-                        }
-                    }
-                };
-
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [selectedImage, images, isZoomed]);
 
             // Formatear tamaño de archivo
             const formatFileSize = (bytes) => {
@@ -2057,7 +671,7 @@
                                         alt={user.username}
                                         className="w-10 h-10 rounded-full border-2 border-gray-200"
                                         onError={(e) => {
-                                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=6366f1&color=fff`;
+                                            e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.username) + '&background=6366f1&color=fff';
                                         }}
                                     />
                                     <div className="text-right">
@@ -2078,11 +692,7 @@
 
                         {/* Zona de Drop */}
                         <div
-                            className={`border-2 border-dashed rounded-lg p-6 sm:p-8 mb-8 text-center transition-all duration-300 ${
-                                isDragging 
-                                    ? 'border-blue-500 bg-blue-50' 
-                                    : 'border-gray-300 hover:border-gray-400'
-                            }`}
+                            className={'border-2 border-dashed rounded-lg p-6 sm:p-8 mb-8 text-center transition-all duration-300 ' + (isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400')}
                             onDrop={handleDrop}
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
@@ -2107,20 +717,6 @@
                                 >
                                     Importar desde Drive
                                 </button>
-                                <button
-                                    onClick={importFromJSON}
-                                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
-                                    title="Importar galería desde archivo JSON"
-                                >
-                                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                        <polyline points="14,2 14,8 20,8"/>
-                                        <line x1="16" x2="8" y1="13" y2="13"/>
-                                        <line x1="16" x2="8" y1="17" y2="17"/>
-                                        <polyline points="10,9 9,9 8,9"/>
-                                    </svg>
-                                    Importar JSON
-                                </button>
                                 {images.length > 0 && (
                                     <>
                                         <button
@@ -2134,13 +730,8 @@
                                         <button
                                             onClick={shareAsHTML}
                                             className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2"
-                                            title="Compartir galería como HTML embebido"
+                                            title="Compartir galería como HTML"
                                         >
-                                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                                                <polyline points="15,3 21,3 21,9"/>
-                                                <line x1="10" x2="21" y1="14" y2="3"/>
-                                            </svg>
                                             Compartir HTML
                                         </button>
                                     </>
@@ -2156,7 +747,7 @@
                             />
                         </div>
 
-                        {/* Contador de imágenes y estadísticas de almacenamiento */}
+                        {/* Contador de imágenes */}
                         {images.length > 0 && (
                             <div className="mb-6 text-center">
                                 <p className="text-gray-600 mb-2">
@@ -2165,7 +756,6 @@
                                 <div className="flex justify-center gap-6 text-sm text-gray-500">
                                     <span>📁 Drive: {images.filter(img => img.isFromDrive).length}</span>
                                     <span>💻 Local: {images.filter(img => !img.isFromDrive).length}</span>
-                                    <span>🌐 Públicas: {images.filter(img => img.isPublic).length}</span>
                                     <span>💾 Almacenamiento: {formatStorageSize(getStorageSize())}</span>
                                 </div>
                             </div>
@@ -2176,28 +766,17 @@
                             {images.map((image, index) => (
                                 <div
                                     key={image.id}
-                                    className="relative group bg-white rounded-lg shadow-md overflow-hidden cursor-move transform hover:scale-105 transition-transform duration-200 fade-in"
-                                    draggable
-                                    onDragStart={(e) => handleImageDragStart(e, index)}
-                                    onDragOver={(e) => handleImageDragOver(e, index)}
-                                    onDragEnd={handleImageDragEnd}
+                                    className="relative group bg-white rounded-lg shadow-md overflow-hidden cursor-pointer transform hover:scale-105 transition-transform duration-200 fade-in"
                                 >
                                     <div className="aspect-square overflow-hidden">
                                         <img
                                             src={image.src}
                                             alt={image.name}
-                                            className="w-full h-full object-cover cursor-pointer"
+                                            className="w-full h-full object-cover"
                                             onClick={() => setSelectedImage(image)}
                                             loading="lazy"
                                             onError={(e) => {
-                                                if (image.isFromDrive) {
-                                                    // Si es de Drive y falla, mostrar imagen de error específica
-                                                    e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTUwIDEwMEgxMDBIMTAwVjE1MEg1MFYxMDBINTBMMTAwIDUwWiIgZmlsbD0iIzlDQTNBRiIvPgo8dGV4dCB4PSIxMDAiIHk9IjE3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNkI3Mjg0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5FcnJvciBjYXJnYW5kbyBEcml2ZTwvdGV4dD4KPHN2Zz4=';
-                                                    e.target.style.filter = 'grayscale(100%)';
-                                                } else {
-                                                    // Para otras imágenes, usar placeholder genérico
-                                                    e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTUwIDEwMEgxMDBIMTAwVjE1MEg1MFYxMDBINTBMMTAwIDUwWiIgZmlsbD0iIzlDQTNBRiIvPgo8dGV4dCB4PSIxMDAiIHk9IjE3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNkI3Mjg0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD4KPHN2Zz4=';
-                                                }
+                                                e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTUwIDEwMEgxMDBIMTAwVjE1MEg1MFYxMDBINTBMMTAwIDUwWiIgZmlsbD0iIzlDQTNBRiIvPgo8dGV4dCB4PSIxMDAiIHk9IjE3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNkI3Mjg0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD4KPHN2Zz4=';
                                             }}
                                         />
                                     </div>
@@ -2208,26 +787,11 @@
                                             <p className="text-sm font-medium truncate">{image.name}</p>
                                             <p className="text-xs">{formatFileSize(image.size)}</p>
                                             {image.isFromDrive && <p className="text-xs text-green-300">📁 Drive</p>}
-                                            {image.isPublic && <p className="text-xs text-blue-300">🌐 Público</p>}
-                                            {image.folderName && <p className="text-xs text-purple-300">📁 {image.folderName}</p>}
-                                            {image.tags && image.tags.length > 0 && (
-                                                <p className="text-xs text-yellow-300">🏷️ {image.tags.slice(0, 2).join(', ')}</p>
-                                            )}
                                         </div>
                                     </div>
 
-                                    {/* Botones de acción */}
-                                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                showEditDetailsModal(image);
-                                            }}
-                                            className="p-1 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
-                                            title="Editar detalles"
-                                        >
-                                            <Edit className="h-4 w-4" />
-                                        </button>
+                                    {/* Botón eliminar */}
+                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -2238,11 +802,6 @@
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </button>
-                                    </div>
-
-                                    {/* Indicador de arrastre */}
-                                    <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                        <Move className="h-4 w-4 text-white" />
                                     </div>
                                 </div>
                             ))}
@@ -2262,60 +821,14 @@
                         )}
                     </div>
 
-                    {/* Modal de imagen completa con navegación */}
+                    {/* Modal de imagen completa */}
                     {selectedImage && (
                         <div className="fixed inset-0 bg-black bg-opacity-90 modal-backdrop flex items-center justify-center z-50 p-4">
-                            <div className={`relative modal-content transition-all duration-300 ${
-                                isZoomed ? 'w-full h-full max-w-none max-h-none overflow-auto' : 'max-w-4xl max-h-full'
-                            }`}>
-                                {/* Botones de control */}
-                                <div className="absolute top-4 right-4 z-10 flex gap-2">
-                                    {/* Botón descargar */}
+                            <div className="relative modal-content max-w-4xl max-h-full">
+                                {/* Botón cerrar */}
+                                <div className="absolute top-4 right-4 z-10">
                                     <button
-                                        onClick={downloadImage}
-                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
-                                        title="Descargar imagen"
-                                    >
-                                        <Download className="h-6 w-6" />
-                                    </button>
-                                    
-                                    {/* Botón editar */}
-                                    <button
-                                        onClick={() => showEditDetailsModal(selectedImage)}
-                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
-                                        title="Editar detalles"
-                                    >
-                                        <Edit className="h-6 w-6" />
-                                    </button>
-                                    
-                                    {/* Botón zoom */}
-                                    <button
-                                        onClick={() => setIsZoomed(!isZoomed)}
-                                        className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
-                                        title={isZoomed ? "Zoom normal" : "Ampliar imagen"}
-                                    >
-                                        {isZoomed ? (
-                                            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <circle cx="11" cy="11" r="8"/>
-                                                <path d="m21 21-4.35-4.35"/>
-                                                <line x1="8" x2="14" y1="11" y2="11"/>
-                                            </svg>
-                                        ) : (
-                                            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <circle cx="11" cy="11" r="8"/>
-                                                <path d="m21 21-4.35-4.35"/>
-                                                <line x1="11" x2="11" y1="8" y2="14"/>
-                                                <line x1="8" x2="14" y1="11" y2="11"/>
-                                            </svg>
-                                        )}
-                                    </button>
-                                    
-                                    {/* Botón cerrar */}
-                                    <button
-                                        onClick={() => {
-                                            setSelectedImage(null);
-                                            setIsZoomed(false);
-                                        }}
+                                        onClick={() => setSelectedImage(null)}
                                         className="p-2 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
                                         title="Cerrar"
                                     >
@@ -2323,104 +836,21 @@
                                     </button>
                                 </div>
 
-                                {/* Navegación anterior */}
-                                {getCurrentImageIndex() > 0 && !isZoomed && (
-                                    <button
-                                        onClick={goToPreviousImage}
-                                        className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
-                                    >
-                                        <ChevronLeft className="h-6 w-6" />
-                                    </button>
-                                )}
-
-                                {/* Navegación siguiente */}
-                                {getCurrentImageIndex() < images.length - 1 && !isZoomed && (
-                                    <button
-                                        onClick={goToNextImage}
-                                        className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-white bg-opacity-20 text-white rounded-full hover:bg-opacity-30 transition-all"
-                                    >
-                                        <ChevronRight className="h-6 w-6" />
-                                    </button>
-                                )}
-
                                 {/* Imagen principal */}
                                 <img
                                     src={selectedImage.src}
                                     alt={selectedImage.name}
-                                    className={`rounded-lg cursor-pointer transition-all duration-300 ${
-                                        isZoomed 
-                                            ? 'w-auto h-auto max-w-none max-h-none' 
-                                            : 'max-w-full max-h-full object-contain'
-                                    }`}
-                                    onClick={() => setIsZoomed(!isZoomed)}
-                                    style={isZoomed ? { minWidth: '100%', minHeight: '100%' } : {}}
+                                    className="max-w-full max-h-full object-contain rounded-lg"
                                 />
 
                                 {/* Información de la imagen */}
                                 <div className="absolute bottom-4 left-4 right-4 text-white bg-black bg-opacity-50 rounded-lg p-4">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <p className="font-medium">{selectedImage.name}</p>
-                                            <p className="text-sm opacity-75">{formatFileSize(selectedImage.size)}</p>
-                                            <div className="flex gap-2 mt-1 flex-wrap">
-                                                {selectedImage.isFromDrive && (
-                                                    <span className="text-xs bg-green-600 px-2 py-1 rounded">📁 Drive</span>
-                                                )}
-                                                {selectedImage.isPublic && (
-                                                    <span className="text-xs bg-blue-600 px-2 py-1 rounded">🌐 Público</span>
-                                                )}
-                                                {selectedImage.folderName && (
-                                                    <span className="text-xs bg-purple-600 px-2 py-1 rounded">📁 {selectedImage.folderName}</span>
-                                                )}
-                                            </div>
-                                            {selectedImage.description && (
-                                                <p className="text-xs opacity-75 mt-2">{selectedImage.description}</p>
-                                            )}
-                                            {selectedImage.tags && selectedImage.tags.length > 0 && (
-                                                <div className="flex gap-1 mt-2 flex-wrap">
-                                                    {selectedImage.tags.map(tag => (
-                                                        <span key={tag} className="text-xs bg-gray-600 px-2 py-1 rounded">#{tag}</span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {selectedImage.isFromDrive && selectedImage.driveUrl && (
-                                                <div className="mt-2">
-                                                    <a 
-                                                        href={selectedImage.driveUrl} 
-                                                        target="_blank" 
-                                                        rel="noopener noreferrer"
-                                                        className="text-xs bg-blue-500 px-2 py-1 rounded hover:bg-blue-600 transition-colors"
-                                                    >
-                                                        Ver en Drive
-                                                    </a>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm opacity-75">
-                                                {getCurrentImageIndex() + 1} de {images.length}
-                                            </p>
-                                        </div>
-                                    </div>
+                                    <p className="font-medium">{selectedImage.name}</p>
+                                    <p className="text-sm opacity-75">{formatFileSize(selectedImage.size)}</p>
+                                    {selectedImage.isFromDrive && (
+                                        <p className="text-xs text-green-300 mt-1">📁 Desde Google Drive</p>
+                                    )}
                                 </div>
-
-                                {/* Indicador de navegación con teclado */}
-                                {!isZoomed && (
-                                    <div className="absolute top-4 left-4 text-white bg-black bg-opacity-50 rounded-lg p-2">
-                                        <p className="text-xs opacity-75">
-                                            ← → Navegar | ESPACIO Zoom | ESC Cerrar
-                                        </p>
-                                    </div>
-                                )}
-                                
-                                {/* Indicador de zoom */}
-                                {isZoomed && (
-                                    <div className="absolute top-4 left-4 text-white bg-black bg-opacity-50 rounded-lg p-2">
-                                        <p className="text-xs opacity-75">
-                                            Click para zoom | ESPACIO Normal | ESC Cerrar
-                                        </p>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     )}
