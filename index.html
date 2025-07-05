@@ -421,6 +421,100 @@
                 urlInput.focus();
             };
 
+            // Importar galería desde JSON
+            const importFromJSON = () => {
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+                
+                const content = document.createElement('div');
+                content.className = 'bg-white rounded-lg shadow-xl p-6 w-full max-w-md';
+                
+                content.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-4">Importar Galería desde JSON</h3>
+                    <p class="text-gray-600 mb-4">Selecciona el archivo JSON de tu galería exportada:</p>
+                    <input type="file" id="jsonFile" accept=".json" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4">
+                    <div class="text-xs text-gray-500 mb-4">
+                        <strong>📋 Instrucciones:</strong><br>
+                        1. Selecciona el archivo JSON que exportaste previamente<br>
+                        2. Se añadirán las imágenes a tu galería actual<br>
+                        3. Se preservarán todos los metadatos originales
+                    </div>
+                    <div class="flex gap-3 justify-end">
+                        <button id="cancelImportBtn" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Cancelar</button>
+                        <button id="importJsonBtn" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">Importar</button>
+                    </div>
+                `;
+                
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+                
+                const fileInput = content.querySelector('#jsonFile');
+                const cancelBtn = content.querySelector('#cancelImportBtn');
+                const importBtn = content.querySelector('#importJsonBtn');
+                
+                cancelBtn.onclick = () => modal.remove();
+                
+                importBtn.onclick = () => {
+                    const file = fileInput.files[0];
+                    if (!file) {
+                        alert('Por favor, selecciona un archivo JSON');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const jsonData = JSON.parse(e.target.result);
+                            
+                            // Validar estructura del JSON
+                            if (!jsonData.images || !Array.isArray(jsonData.images)) {
+                                alert('El archivo JSON no tiene el formato correcto de galería');
+                                return;
+                            }
+                            
+                            // Verificar metadatos
+                            const metadata = jsonData.metadata || {};
+                            const importedImages = jsonData.images;
+                            
+                            // Mostrar información de importación
+                            const confirmImport = confirm(
+                                `¿Importar ${importedImages.length} imágenes?\\n\\n` +
+                                `Galería: ${metadata.galleryName || 'Sin nombre'}\\n` +
+                                `Propietario: ${metadata.owner || 'Desconocido'}\\n` +
+                                `Fecha exportación: ${metadata.exportDate ? new Date(metadata.exportDate).toLocaleDateString() : 'Desconocida'}\\n\\n` +
+                                `Se añadirán a tu galería actual.`
+                            );
+                            
+                            if (!confirmImport) return;
+                            
+                            // Procesar imágenes importadas
+                            const processedImages = importedImages.map(img => ({
+                                ...img,
+                                id: Date.now() + Math.random(), // Nuevo ID para evitar conflictos
+                                importedAt: new Date().toISOString(),
+                                originalId: img.id // Preservar ID original
+                            }));
+                            
+                            // Añadir a la galería actual
+                            setImages(prev => [...prev, ...processedImages]);
+                            
+                            modal.remove();
+                            alert(`✅ Importación exitosa!\\n${processedImages.length} imágenes añadidas a tu galería.`);
+                            
+                        } catch (error) {
+                            console.error('Error parsing JSON:', error);
+                            alert('Error al leer el archivo JSON. Asegúrate de que sea un archivo válido.');
+                        }
+                    };
+                    
+                    reader.readAsText(file);
+                };
+                
+                modal.onclick = (e) => {
+                    if (e.target === modal) modal.remove();
+                };
+            };
+
             // Exportar galería como JSON
             const exportGallery = () => {
                 const galleryData = {
@@ -815,6 +909,14 @@
                                         >
                                             <Download className="h-4 w-4" />
                                             Exportar JSON
+                                        </button>
+                                        <button
+                                            onClick={importFromJSON}
+                                            className="px-6 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-2"
+                                            title="Importar galería desde JSON"
+                                        >
+                                            <Upload className="h-4 w-4" />
+                                            Importar JSON
                                         </button>
                                         <button
                                             onClick={shareAsHTML}
