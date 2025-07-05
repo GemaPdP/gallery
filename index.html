@@ -660,7 +660,7 @@
                                     Galería de {user.username}
                                 </h1>
                                 <p className="text-gray-600 mt-1">
-                                    Galería personal de fotografías
+                                    Galería de joyas
                                 </p>
                             </div>
                             
@@ -773,7 +773,20 @@
                                             src={image.src}
                                             alt={image.name}
                                             className="w-full h-full object-cover"
-                                            onClick={() => setSelectedImage(image)}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                // Crear un enlace temporal para descargar la imagen
+                                                const link = document.createElement('a');
+                                                link.href = image.src;
+                                                link.download = image.name || 'imagen-' + Date.now();
+                                                link.target = '_blank';
+                                                link.rel = 'noopener noreferrer';
+                                                
+                                                // Simular click para abrir en nueva pestaña con descarga
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                            }}
                                             loading="lazy"
                                             onError={(e) => {
                                                 e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgNTBMMTUwIDEwMEgxMDBIMTAwVjE1MEg1MFYxMDBINTBMMTAwIDUwWiIgZmlsbD0iIzlDQTNBRiIvPgo8dGV4dCB4PSIxMDAiIHk9IjE3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNkI3Mjg0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5JbWFnZW4gbm8gZGlzcG9uaWJsZTwvdGV4dD4KPHN2Zz4=';
